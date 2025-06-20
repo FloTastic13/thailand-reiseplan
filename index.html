@@ -158,7 +158,7 @@
                 day: "Tag 5",
                 date: "01. November",
                 title: "Chiang Rai: Kunst & Reise nach Chiang Mai",
-                icon: "🎨🚌",
+                icon: "🎨�",
                 activities: [
                     { time: "Vormittag", desc: "Besuch des farbenprächtigen **Wat Rong Suea Ten (Blauer Tempel)** und des mysteriösen **Baan Dam Museum (Schwarzes Haus)**." },
                     { time: "Mittag", desc: "Mittagessen in Chiang Rai." },
@@ -202,7 +202,7 @@
                 day: "Tag 9",
                 date: "05. November",
                 title: "LOY KRATHONG - Fest der Lichter auf dem Wasser",
-                icon: "�",
+                icon: "🌸",
                 activities: [
                     { time: "Tagsüber", desc: "Die Stadt pulsiert in festlicher Vorbereitung. Spazieren Sie am **Ping River** und beobachten Sie die letzten Vorbereitungen. Besorgen Sie sich einen **Krathong**." },
                     { time: "Abend", desc: "**HAUPTEREIGNIS!** Lassen Sie Ihren Krathong am Ping River (z.B. nahe der Narawat Bridge) zu Wasser. Erleben Sie die magische Atmosphäre mit Tausenden von Lichtern auf dem Wasser und spektakulären Feuerwerken. Seien Sie auf Menschenmassen vorbereitet." }
@@ -461,7 +461,8 @@
             chatHistory.push({ role: "user", parts: [{ text: promptContent }] });
 
             const payload = { contents: chatHistory };
-            const apiKey = ""; // Canvas will automatically provide this
+            // Ensure the API key is correctly accessed from the Canvas environment
+            const apiKey = typeof __API_KEY__ !== 'undefined' ? __API_KEY__ : ''; 
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
             try {
