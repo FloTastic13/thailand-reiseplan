@@ -31,11 +31,12 @@
         }
         .accordion-content {
             max-height: 0;
-            overflow: hidden;
+            overflow-y: hidden; /* Changed from hidden to auto for scrolling */
             transition: max-height 0.5s ease-out;
         }
         .day-card.active .accordion-content {
-            max-height: 1000px;
+            max-height: 1000px; /* Adjust this value if content exceeds 1000px and doesn't scroll */
+            overflow-y: auto; /* Enable vertical scrolling when active */
         }
         .day-card-header {
             cursor: pointer;
@@ -56,6 +57,9 @@
             margin-top: 1rem;
             color: #065f46; /* Darker green text */
             font-size: 0.9rem;
+            /* Added for potential overflow within the fact container itself if it gets too long, though primary fix is in accordion-content */
+            max-height: 150px; /* Limit height of fact container */
+            overflow-y: auto; /* Allow scrolling within the fact container */
         }
         .fun-fact-button {
             background-color: #10b981; /* Green-ish button */
@@ -158,7 +162,7 @@
                 day: "Tag 5",
                 date: "01. November",
                 title: "Chiang Rai: Kunst & Reise nach Chiang Mai",
-                icon: "🎨�",
+                icon: "�🚌",
                 activities: [
                     { time: "Vormittag", desc: "Besuch des farbenprächtigen **Wat Rong Suea Ten (Blauer Tempel)** und des mysteriösen **Baan Dam Museum (Schwarzes Haus)**." },
                     { time: "Mittag", desc: "Mittagessen in Chiang Rai." },
