@@ -1,814 +1,676 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { 
-    getFirestore, collection, doc, writeBatch, query, onSnapshot, 
-    addDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, runTransaction
-} from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
-import { Bar, Doughnut } from 'react-chartjs-2';
-import { 
-    ChevronDown, Edit, Trash2, Plus, X, Loader2, Calendar, Clock, Text, PlusCircle,
-    ListChecks, Wallet, Map, Briefcase, Camera, DollarSign, CheckCircle, Circle, Award, UploadCloud, Lock, MessageSquareQuote, Sparkles, GripVertical
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interaktiver Reiseplan: Thailand & Festivals</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Northern Thai Charm -->
+    <!-- Application Structure Plan: Die Anwendung verwendet eine tab-basierte Navigation ("Reiseplan", "Festival-Führer", "Wichtige Hinweise"), um den linearen Reisebericht in eine benutzergesteuerte, thematische Erkundung umzuwandeln. Diese Struktur ist für die Benutzerfreundlichkeit optimiert, da Benutzer direkt zu den für sie relevanten Informationen springen können – sei es der detaillierte Tagesablauf, eine Zusammenfassung der Festival-Highlights oder praktische Reisetipps – anstatt durch einen langen, chronologischen Text scrollen zu müssen. Dies fördert eine aktive Auseinandersetzung mit dem Inhalt. -->
+    <!-- Visualization & Content Choices:
+        - Reiseplan: Ziel: Detaillierte Darstellung des chronologischen Ablaufs. Methode: Interaktive Akkordeon-Liste (HTML/JS), die es dem Benutzer ermöglicht, Tage nach Interesse zu erweitern oder zu reduzieren. Justification: Bietet eine klare Übersicht und vermeidet Informationsüberflutung.
+        - Festival-Führer: Ziel: Hervorhebung der wichtigsten Ereignisse der Reise. Methode: Zweispaltiges Layout mit Informationskarten (HTML/CSS) und einem Balkendiagramm zur "Aktivitätsintensität" (Chart.js). Justification: Fokussiert die Aufmerksamkeit auf die Höhepunkte und liefert eine schnelle, visuelle Zusammenfassung der Reiseintensität.
+        - Wichtige Hinweise: Ziel: Bereitstellung praktischer Ratschläge. Methode: Klar strukturierte Liste mit Icons (HTML/CSS/Unicode). Justification: Sorgt für schnelle Lesbarkeit und einfache Erfassbarkeit der wichtigsten Tipps.
+        - Aktivitätsintensitäts-Chart: Ziel: Visualisierung der "Betriebsamkeit" jedes Tages. Methode: Balkendiagramm (Chart.js/Canvas). Interaktion: Tooltips bei Hover. Justification: Fügt eine leicht verständliche quantitative Dimension hinzu, die den Rhythmus der Reise auf einen Blick zeigt. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FDFBF8;
+            color: #3f3c3a;
+        }
+        .nav-button {
+            transition: all 0.3s ease;
+        }
+        .nav-button.active {
+            background-color: #0d9488;
+            color: #ffffff;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .accordion-content {
+            max-height: 0;
+            overflow-y: hidden; /* Changed from hidden to auto for scrolling */
+            transition: max-height 0.5s ease-out;
+        }
+        .day-card.active .accordion-content {
+            max-height: 1000px; /* Adjust this value if content exceeds 1000px and doesn't scroll */
+            overflow-y: auto; /* Enable vertical scrolling when active */
+        }
+        .day-card-header {
+            cursor: pointer;
+        }
+        .chart-container {
+            position: relative;
+            margin: auto;
+            height: 40vh;
+            width: 100%;
+            max-width: 800px;
+            max-height: 400px;
+        }
+        .fun-fact-container {
+            background-color: #ecfdf5; /* Light green for fun facts */
+            border-left: 4px solid #0d9488;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+            color: #065f46; /* Darker green text */
+            font-size: 0.9rem;
+            /* Added for potential overflow within the fact container itself if it gets too long, though primary fix is in accordion-content */
+            max-height: 150px; /* Limit height of fact container */
+            overflow-y: auto; /* Allow scrolling within the fact container */
+        }
+        .fun-fact-button {
+            background-color: #10b981; /* Green-ish button */
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px; /* Full rounded */
+            font-weight: 600;
+            transition: background-color 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+        .fun-fact-button:hover {
+            background-color: #059669;
+        }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #0d9488;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 0.5rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto px-4 py-8 sm:py-12">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl sm:text-5xl font-bold text-teal-800">Interaktiver Reiseplan</h1>
+            <p class="mt-2 text-lg text-stone-600">Thailand: Eine Monatsreise & Festivals 2024</p>
+        </header>
 
-// --- Chart.js Registration ---
-ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);
+        <nav class="flex justify-center space-x-2 sm:space-x-4 mb-10 bg-stone-200/50 p-2 rounded-full max-w-md mx-auto">
+            <button id="nav-reiseplan" class="nav-button active w-full text-center px-4 py-2 rounded-full font-semibold text-stone-700 hover:bg-teal-100">Reiseplan</button>
+            <button id="nav-festival" class="nav-button w-full text-center px-4 py-2 rounded-full font-semibold text-stone-700 hover:bg-teal-100">Festival-Führer</button>
+            <button id="nav-hinweise" class="nav-button w-full text-center px-4 py-2 rounded-full font-semibold text-stone-700 hover:bg-teal-100">Hinweise</button>
+        </nav>
 
-// --- Firebase Configuration ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-thailand-planner-full-v10-final';
-
-// --- Initial Data for Seeding (Fully restored and complete) ---
-const initialItineraryData = [
-    { dayNum: 1, day: "Tag 1", date: "28. Oktober", title: "Ankunft in Bangkok & erste Eindrücke", icon: "🇹🇭", photos: [], activities: JSON.stringify([ { time: "13:45 Uhr", desc: "Ankunft am Bangkok International Airport (BKK), Transfer zum Hotel **Chatrium Riverside Bangkok** und Check-in." }, { time: "Abend", desc: "Besuchen Sie die belebte **Asiatique Riverfront** mit ihren Geschäften, Restaurants und Shows. Genießen Sie anschließend eine stimmungsvolle **Dinner-Kreuzfahrt auf dem Chao Phraya Fluss**." }]) },
-    { dayNum: 2, day: "Tag 2", date: "29. Oktober", title: "Bangkok: Tempel & Kultur", icon: "🏯", photos: [], activities: JSON.stringify([ { time: "Vormittag", desc: "Besuch des **Großen Palastes** und des **Wat Phra Kaeo (Tempel des Smaragd-Buddhas)**." }, { time: "Nachmittag", desc: "Erkundung des **Wat Pho (Tempel des Liegenden Buddha)** und des **Wat Arun (Tempel der Morgenröte)**." }, { time: "Abend", desc: "Entdecken Sie die Gassen von **Chinatown** und genießen Sie die vielfältige Streetfood-Szene." }]) },
-    { dayNum: 3, day: "Tag 3", date: "30. Oktober", title: "Bangkok: Märkte & Stadtausblicke", icon: "🛍️", photos: [], activities: JSON.stringify([{ time: "Vormittag", desc: "Besuch des lebhaften **Blumenmarktes Pak Khlong Talat**." }, { time: "Mittag", desc: "Optionaler Besuch des **Jim Thompson Hauses**." }, { time: "Nachmittag", desc: "Shopping oder Besuch einer Rooftop-Bar." }, { time: "Abend", desc: "Abschlussabend in Bangkok, z.B. auf dem **Jodd Fairs** Nachtmarkt." }]) },
-    { dayNum: 4, day: "Tag 4", date: "31. Oktober", title: "Reise nach Chiang Rai", icon: "✈️", photos: [], activities: JSON.stringify([{ time: "Vormittag", desc: "Flug nach Chiang Rai (CEI)." }, { time: "Mittag", desc: "Ankunft, Transfer zum Hotel und Check-in."}, { time: "Nachmittag", desc: "Besuch des ikonischen **Wat Rong Khun (Weißer Tempel)**." }, { time: "Abend", desc: "Bummel über den **Chiang Rai Night Bazaar**." }]) },
-    { dayNum: 5, day: "Tag 5", date: "01. November", title: "Chiang Rai & Reise nach Chiang Mai", icon: "🚌", photos: [], activities: JSON.stringify([{ time: "Vormittag", desc: "Besuch des **Wat Rong Suea Ten (Blauer Tempel)** und des **Baan Dam Museum (Schwarzes Haus)**." }, { time: "Mittag", desc: "Mittagessen in Chiang Rai." }, { time: "Nachmittag", desc: "Busfahrt nach Chiang Mai." }, { time: "Abend", desc: "Entspanntes Abendessen in Chiang Mai." }]) },
-    { dayNum: 6, day: "Tag 6", date: "02. November", title: "Chiang Mai: Altstadt & Tempel", icon: "🏯", photos: [], activities: JSON.stringify([{ time: "Vormittag", desc: "Erkundung der Altstadt mit **Wat Phra Singh** und **Wat Chedi Luang**." }, { time: "Nachmittag", desc: "Besuch des entspannten Waldtempels **Wat Umong** mit seinen Tunneln." }, { time: "Abend", desc: "Entdecken Sie das trendige Viertel **Nimmanhaemin Road**." }]) },
-    { dayNum: 7, day: "Tag 7", date: "03. November", title: "Chiang Mai: Bergtempel & Märkte", icon: "⛰️🛍️", photos: [], activities: JSON.stringify([{ time: "Vormittag", desc: "Ausflug zum Bergtempel **Wat Phra That Doi Suthep**." }, { time: "Nachmittag", desc: "Freizeit für einen Kochkurs oder eine entspannte Thai-Massage." }, { time: "Abend", desc: "Eintauchen in die **Sunday Walking Street**." }]) },
-    { dayNum: 8, day: "Tag 8", date: "04. November", title: "Chiang Mai: Elefanten-Begegnung", icon: "🐘", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Besuch eines **ethischen Elefantenschutzgebietes** (früh buchen!)." }, { time: "Abend", desc: "Entspannung und Vorbereitung auf die bevorstehenden Lichterfeste." }]) },
-    { dayNum: 9, day: "Tag 9", date: "05. November", title: "LOY KRATHONG", icon: "🌸", photos: [], activities: JSON.stringify([{ time: "Tagsüber", desc: "Die Stadt pulsiert. Besorgen Sie sich einen **Krathong** am **Ping River**." }, { time: "Abend", desc: "**HAUPTEREIGNIS!** Krathong am Ping River zu Wasser lassen. Magische Atmosphäre mit Feuerwerk." }]) },
-    { dayNum: 10, day: "Tag 10", date: "06. November", title: "YI PENG", icon: "🏮", photos: [], activities: JSON.stringify([{ time: "Tagsüber", desc: "Erholung oder Besuch des Künstlerdorfs **Baan Kang Wat**." }, { time: "Abend", desc: "**HAUPTEREIGNIS!** Freilassung Tausender **Himmelslaternen (Khom Loi)** beobachten." }]) },
-    { dayNum: 11, day: "Tag 11", date: "07. November", title: "Reise nach Bangkok (Nachtzug)", icon: "🚂", photos: [], activities: JSON.stringify([{ time: "18:00 Uhr", desc: "Abfahrt mit dem **Nachtzug nach Bangkok**." }]) },
-    { dayNum: 12, day: "Tag 12", date: "08. November", title: "Bangkok & Flug nach Phuket", icon: "🛍️✈️", photos: [], activities: JSON.stringify([{ time: "Vormittag", desc: "Besuch des **Chatuchak Wochenendmarktes** (Freitags eingeschränkt!)." }, { time: "Nachmittag", desc: "Flug von Bangkok (DMK) nach Phuket (HKT)." }]) },
-    { dayNum: 13, day: "Tag 13", date: "09. November", title: "Phuket: Strände & Kultur", icon: "🏖️", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Erkundung der Strände, Besuch des **Big Buddha** und **Phuket Old Town**." }]) },
-    { dayNum: 14, day: "Tag 14", date: "10. November", title: "Phuket: Phang Nga Bay", icon: "⛰️", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Tagesausflug zur **Phang Nga Bucht** mit James Bond Island." }]) },
-    { dayNum: 15, day: "Tag 15", date: "11. November", title: "Phuket: Similan Inseln", icon: "🏝️", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Langer Tagesausflug zu den **Similan Inseln** zum Schnorcheln (früh starten!)." }]) },
-    { dayNum: 16, day: "Tag 16", date: "12. November", title: "Phuket: Entspannung", icon: "😌", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Entspannungstag am Strand oder Pool." }]) },
-    { dayNum: 17, day: "Tag 17", date: "13. November", title: "Phuket: Vorbereitung", icon: "👋", photos: [], activities: JSON.stringify([{ time: "Abend", desc: "Abschiedsessen in Phuket." }]) },
-    { dayNum: 18, day: "Tag 18", date: "14. November", title: "Reise nach Koh Phi Phi", icon: "🚤", photos: [], activities: JSON.stringify([{ time: "Vormittag", desc: "Fähre nach **Koh Phi Phi Don**." }, { time: "Nachmittag", desc: "Wanderung zum Viewpoint." }]) },
-    { dayNum: 19, day: "Tag 19", date: "15. November", title: "Koh Phi Phi Leh", icon: "🤿", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Bootsausflug zur **Maya Bay** & **Pileh Lagoon**." }]) },
-    { dayNum: 20, day: "Tag 20", date: "16. November", title: "Reise nach Koh Kradan", icon: "🐢", photos: [], activities: JSON.stringify([{ time: "Nachmittag", desc: "Ankunft im Inselparadies **Koh Kradan**." }]) },
-    { dayNum: 21, day: "Tag 21", date: "17. November", title: "Koh Kradan & Emerald Cave", icon: "💎", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Schnorcheln & Ausflug zur **Emerald Cave**." }]) },
-    { dayNum: 22, day: "Tag 22", date: "18. November", title: "Reise nach Koh Lanta", icon: "🛵", photos: [], activities: JSON.stringify([{ time: "Mittag", desc: "Ankunft auf **Koh Lanta**." }]) },
-    { dayNum: 23, day: "Tag 23", date: "19. November", title: "Koh Lanta: Nationalpark", icon: "🐒", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Inselerkundung, Besuch des **Mu Koh Lanta Nationalparks**." }]) },
-    { dayNum: 24, day: "Tag 24", date: "20. November", title: "Reise nach Krabi", icon: "⛵", photos: [], activities: JSON.stringify([{ time: "Vormittag", desc: "Reise nach **Ao Nang, Krabi**." }]) },
-    { dayNum: 25, day: "Tag 25", date: "21. November", title: "Krabi: Railay Beach", icon: "🧗", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Tagesausflug zum **Railay Beach**." }]) },
-    { dayNum: 26, day: "Tag 26", date: "22. November", title: "Krabi: 4 Inseln Tour", icon: "🐠", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Klassische **Vier Insel Tour**." }]) },
-    { dayNum: 27, day: "Tag 27", date: "23. November", title: "Krabi nach Bangkok", icon: "✈️", photos: [], activities: JSON.stringify([{ time: "Vormittag", desc: "Check-out aus Ihrem Hotel in Krabi, Transfer zum Krabi International Airport (KBV)." }, { time: "Mittag", desc: "Flug von Krabi nach Bangkok (BKK/DMK)." }, { time: "Nachmittag", desc: "Ankunft in Bangkok, Transfer zu Ihrem Hotel **Carlton Sukhumvit** und Check-in." }, { time: "Abend", desc: "Freizeit in Bangkok, um letzte Eindrücke zu sammeln oder ein Abschiedsessen zu genießen." }]) },
-    { dayNum: 28, day: "Tag 28", date: "24. November", title: "Bangkok: Individuell", icon: "🚶", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Freizeit und individuelle Erkundung in Bangkok, wie von Ihnen gewünscht." }]) },
-    { dayNum: 29, day: "Tag 29", date: "25. November", title: "Bangkok: Letzte Einkäufe", icon: "🎁", photos: [], activities: JSON.stringify([{ time: "Ganztägig", desc: "Letzte Souvenirs besorgen." }]) },
-    { dayNum: 30, day: "Tag 30", date: "26. November", title: "Abreise", icon: "👋", photos: [], activities: JSON.stringify([{ time: "Vormittag", desc: "Je nach Abflugzeit: Zeit für ein letztes thailändisches Frühstück oder einen entspannten Vormittag." }, { time: "12:40 Uhr", desc: "Transfer zum Flughafen." }]) },
-];
-const initialTipsData = [
-    { icon: "✈️", title: "Früh buchen", text: "Sie reisen in der absoluten Hochsaison. Buchen Sie Flüge und Unterkünfte so früh wie möglich." },
-    { icon: "🚕", title: "Transport", text: "Planen Sie stets Pufferzeiten für den Transport ein. Nutzen Sie Grab (Taxi-App)." },
-    { icon: "🧘", title: "Flexibilität", text: "Der Reiseplan ist sehr intensiv. Bleiben Sie flexibel und passen Sie ihn Ihrem Energieniveau an." },
-];
-const initialTodosData = [
-    { category: 'Vorbereitung', text: 'Reiseversicherung abschließen', completed: false, cost: 0, title: 'Versicherung' },
-    { category: 'Vorbereitung', text: 'Ggf. notwendige Impfungen prüfen/auffrischen', completed: false, cost: 0, title: 'Medizinische Vorbereitung' },
-    { category: 'Buchungen', text: 'Flüge Frankfurt ↔ Bangkok buchen', completed: false, cost: 0, title: 'Internationale Flüge' },
-    { category: 'Hotels', text: 'Unterkunft in Bangkok (Tag 1-3) buchen', completed: false, cost: 0, title: 'Hotel Bangkok 1' },
-    { category: 'Transport', text: 'Flug von Bangkok nach Chiang Rai (Tag 4) buchen', completed: false, cost: 0, title: 'Flug BKK-CEI' },
-    { category: 'Hotels', text: 'Unterkunft in Chiang Rai (Tag 4) buchen', completed: false, cost: 0, title: 'Hotel Chiang Rai' },
-    { category: 'Transport', text: 'Bus/Transfer von Chiang Rai nach Chiang Mai (Tag 5) organisieren', completed: false, cost: 0, title: 'Bus CEI-CNX' },
-    { category: 'Hotels', text: 'Unterkunft in Chiang Mai (Tag 5-10) buchen', completed: false, cost: 0, title: 'Hotel Chiang Mai' },
-    { category: 'Tickets & Touren', text: 'Ethisches Elefanten-Sanctuary in Chiang Mai buchen', completed: false, cost: 0, title: 'Elefanten Tour' },
-    { category: 'Tickets & Touren', text: 'Tickets für Yi Peng/Loy Krathong recherchieren', completed: false, cost: 0, title: 'Festival Tickets' },
-    { category: 'Transport', text: 'Nachtzug von Chiang Mai nach Bangkok (Tag 11) buchen', completed: false, cost: 0, title: 'Nachtzug CNX-BKK' },
-    { category: 'Transport', text: 'Flug von Bangkok nach Phuket (Tag 12) buchen', completed: false, cost: 0, title: 'Flug BKK-HKT' },
-    { category: 'Hotels', text: 'Unterkunft auf Phuket (Tag 12-17) buchen', completed: false, cost: 0, title: 'Hotel Phuket' },
-    { category: 'Tickets & Touren', text: 'Tagestour Phang Nga Bucht buchen', completed: false, cost: 0, title: 'Tour Phang Nga' },
-    { category: 'Transport', text: 'Fähre von Phuket nach Koh Phi Phi (Tag 18) organisieren', completed: false, cost: 0, title: 'Fähre HKT-PhiPhi' },
-    { category: 'Hotels', text: 'Unterkunft auf Koh Phi Phi (Tag 18-19) buchen', completed: false, cost: 0, title: 'Hotel Koh Phi Phi' },
-    { category: 'Transport', text: 'Fähre von Koh Phi Phi nach Koh Kradan (Tag 20) organisieren', completed: false, cost: 0, title: 'Fähre PhiPhi-Kradan' },
-    { category: 'Hotels', text: 'Unterkunft auf Koh Kradan (Tag 20-21) buchen', completed: false, cost: 0, title: 'Hotel Koh Kradan' },
-    { category: 'Transport', text: 'Transport von Koh Kradan nach Koh Lanta (Tag 22) organisieren', completed: false, cost: 0, title: 'Transfer Kradan-Lanta' },
-    { category: 'Hotels', text: 'Unterkunft auf Koh Lanta (Tag 22-23) buchen', completed: false, cost: 0, title: 'Hotel Koh Lanta' },
-    { category: 'Transport', text: 'Transport von Koh Lanta nach Krabi (Tag 24) organisieren', completed: false, cost: 0, title: 'Transfer Lanta-Krabi' },
-    { category: 'Hotels', text: 'Unterkunft in Krabi/Ao Nang (Tag 24-26) buchen', completed: false, cost: 0, title: 'Hotel Krabi' },
-    { category: 'Transport', text: 'Flug von Krabi nach Bangkok (Tag 27) buchen', completed: false, cost: 0, title: 'Flug KBV-BKK' },
-    { category: 'Hotels', text: 'Unterkunft in Bangkok (Tag 27-29) buchen', completed: false, cost: 0, title: 'Hotel Bangkok 2' },
-];
-const initialPackingData = [
-    { category: 'Dokumente', text: 'Reisepass', completed: false },
-    { category: 'Kleidung', text: 'Lange, luftige Hose & Oberteil für Tempelbesuche', completed: false },
-    { category: 'Elektronik', text: 'Powerbank', completed: false },
-];
-const initialHighlightsData = [
-    { id: 'fest-loy', title: 'Loy Krathong', description: 'Ein Fest der Reinigung und Dankbarkeit, bei dem Flöße (Krathongs) zu Wasser gelassen werden, um Sorgen davontragen zu lassen.', imageUrl: 'https://images.pexels.com/photos/5878477/pexels-photo-5878477.jpeg?auto=compress&cs=tinysrgb&w=600' },
-    { id: 'fest-yi', title: 'Yi Peng', description: 'Tausende von Himmelslaternen (Khom Loi) steigen in den Nachthimmel und schaffen ein unvergessliches Meer aus Licht.', imageUrl: 'https://images.pexels.com/photos/3274903/pexels-photo-3274903.jpeg?auto=compress&cs=tinysrgb&w=600' },
-    { id: 'exp-bkk', title: 'Tempelpracht in Bangkok', description: 'Besuch des prunkvollen Großen Palastes und der liegenden Buddha-Statue im Wat Pho.', imageUrl: 'https://images.pexels.com/photos/161403/wat-arun-thom-thailand-bangkok-161403.jpeg?auto=compress&cs=tinysrgb&w=600' },
-    { id: 'exp-chiangmai', title: 'Kultur im Norden', description: 'Chiang Mai, die "Rose des Nordens", bezaubert mit Tempeln, Märkten und einer entspannten Atmosphäre.', imageUrl: 'https://images.pexels.com/photos/1440403/pexels-photo-1440403.jpeg?auto=compress&cs=tinysrgb&w=600' },
-    { id: 'exp-chiangrai', title: 'Kunst in Chiang Rai', description: 'Heimat einzigartiger Tempel wie dem Weißen Tempel (Wat Rong Khun) und dem Blauen Tempel (Wat Rong Suea Ten).', imageUrl: 'https://images.pexels.com/photos/10594383/pexels-photo-10594383.jpeg?auto=compress&cs=tinysrgb&w=600' },
-    { id: 'exp-islands', title: 'Inselparadiese', description: 'Entdecken Sie die Traumstrände von Phuket, Koh Phi Phi und den ruhigen Geheimtipps.', imageUrl: 'https://images.pexels.com/photos/931007/pexels-photo-931007.jpeg?auto=compress&cs=tinysrgb&w=600' }
-];
-
-// --- Helper & UI Components ---
-const BoldText = ({ text }) => {
-    if (!text) return null;
-    const parts = text.split(/\*\*(.*?)\*\*/g);
-    return <>{parts.map((part, i) => i % 2 === 1 ? <strong key={i} className="font-semibold text-teal-700">{part}</strong> : part)}</>;
-};
-
-const Modal = ({ children, onClose }) => (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-        <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg" onClick={e => e.stopPropagation()}>{children}</div>
+        <main id="content-area">
+            <!-- Content will be injected by JavaScript -->
+        </main>
     </div>
-);
 
-const InputField = ({ label, icon, ...props }) => (
-    <div>
-        <label className="text-sm font-medium text-slate-600">{label}</label>
-        <div className="relative mt-1">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">{icon}</span>
-            <input {...props} className="w-full pl-10 p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-teal-500 transition" />
-        </div>
-    </div>
-);
-
-function EditModal({ item, onSave, onClose }) {
-    const [formData, setFormData] = useState(item);
-    const dragItem = useRef();
-    const dragOverItem = useRef();
-
-    useEffect(() => {
-        setFormData(item);
-    }, [item]);
-
-    const handleFieldChange = (field, value) => {
-        setFormData(prev => ({ ...prev, [field]: value }));
-    };
-
-    const handleActivityChange = (index, field, value) => {
-        const updatedActivities = [...(formData.activities || [])];
-        updatedActivities[index][field] = value;
-        setFormData(prev => ({ ...prev, activities: updatedActivities }));
-    };
-
-    const addActivity = () => {
-         setFormData(prev => ({
-            ...prev,
-            activities: [...(prev.activities || []), { time: 'Neue Zeit', desc: 'Neue Beschreibung' }]
-        }));
-    };
-    
-    const removeActivity = (index) => {
-        setFormData(prev => ({
-            ...prev,
-            activities: prev.activities.filter((_, i) => i !== index)
-        }));
-    };
-    
-    const handleDragSort = () => {
-        const activitiesClone = [...formData.activities];
-        const temp = activitiesClone[dragItem.current];
-        activitiesClone.splice(dragItem.current, 1);
-        activitiesClone.splice(dragOverItem.current, 0, temp);
-        setFormData(prev => ({ ...prev, activities: activitiesClone }));
-    };
-
-    return (
-        <Modal onClose={onClose}>
-            <h2 className="text-2xl font-bold mb-4 text-slate-800">
-                {formData.type === 'day' ? 'Tag bearbeiten' : 'Tipp bearbeiten'}
-            </h2>
-            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-                {formData.type === 'day' && (
-                    <>
-                        <InputField label="Titel" icon={<Text size={16}/>} value={formData.title || ''} onChange={e => handleFieldChange('title', e.target.value)} />
-                        <InputField label="Datum" icon={<Calendar size={16}/>} value={formData.date || ''} onChange={e => handleFieldChange('date', e.target.value)} />
-                        <h3 className="text-lg font-semibold mt-4 mb-2 text-slate-700">Aktivitäten</h3>
-                        {(formData.activities || []).map((act, index) => (
-                            <div 
-                                key={index} 
-                                className="p-3 bg-slate-50 rounded-lg space-y-2 relative"
-                                draggable
-                                onDragStart={() => dragItem.current = index}
-                                onDragEnter={() => dragOverItem.current = index}
-                                onDragEnd={handleDragSort}
-                                onDragOver={(e) => e.preventDefault()}
-                            >
-                                <GripVertical className="absolute top-1/2 -translate-y-1/2 left-1 text-slate-400 cursor-move" size={16}/>
-                                <button onClick={() => removeActivity(index)} className="absolute top-2 right-2 text-slate-400 hover:text-red-500 p-1"><X size={16} /></button>
-                                <div className="ml-6">
-                                    <InputField label="Zeit" icon={<Clock size={16}/>} value={act.time} onChange={e => handleActivityChange(index, 'time', e.target.value)} />
-                                    <textarea placeholder="Beschreibung" value={act.desc} onChange={e => handleActivityChange(index, 'desc', e.target.value)} className="w-full p-2 border border-slate-300 rounded-md text-sm" rows="3"></textarea>
-                                </div>
-                            </div>
-                        ))}
-                         <button onClick={addActivity} className="mt-2 flex items-center gap-2 text-sm text-teal-600 font-semibold hover:text-teal-800">
-                            <PlusCircle size={16} /> Neue Aktivität hinzufügen
-                        </button>
-                    </>
-                )}
-                {formData.type === 'tip' && (
-                    <>
-                        <InputField label="Titel" icon={<Text size={16}/>} value={formData.title} onChange={e => handleFieldChange('title', e.target.value)} />
-                        <InputField label="Icon (Emoji)" icon={<span>{formData.icon}</span>} value={formData.icon} onChange={e => handleFieldChange('icon', e.target.value)} />
-                        <textarea placeholder="Text" value={formData.text} onChange={e => handleFieldChange('text', e.target.value)} className="w-full p-2 border border-slate-300 rounded-md" rows="4"></textarea>
-                    </>
-                )}
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-                <button onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 font-semibold text-slate-700 transition">Abbrechen</button>
-                <button onClick={() => onSave(formData)} className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold transition shadow-sm">Speichern</button>
-            </div>
-        </Modal>
-    );
-}
-
-const GlobalStyles = () => (
-  <style>{`
-    .nav-button { flex-grow: 1; transition: all 0.3s ease; text-align: center; padding: 0.5rem 0.75rem; border-radius: 9999px; font-weight: 600; color: #3f3c3a; }
-    .nav-button:hover { background-color: #ccfbf1; }
-    .nav-button.active { background-color: #0d9488; color: #ffffff; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
-    .custom-div-icon .marker-pin {
-        width: 30px;
-        height: 30px;
-        border-radius: 50% 50% 50% 0;
-        background: #0d9488;
-        position: absolute;
-        transform: rotate(-45deg);
-        left: 50%;
-        top: 50%;
-        margin: -15px 0 0 -15px;
-        border: 2px solid white;
-        box-shadow: 0 0 5px rgba(0,0,0,0.5);
-    }
-    .custom-div-icon .marker-number {
-        position: absolute;
-        width: 30px;
-        height: 30px;
-        text-align: center;
-        line-height: 26px;
-        color: white;
-        font-weight: bold;
-        font-size: 14px;
-        transform: rotate(45deg);
-    }
-    @keyframes fade-in {
-        from { opacity: 0; transform: scale(0.95); }
-        to { opacity: 1; transform: scale(1); }
-    }
-    .animate-fade-in {
-        animation: fade-in 0.3s ease-out;
-    }
-  `}</style>
-);
-
-
-// --- Main App Component ---
-export default function App() {
-    // --- State Management ---
-    const [db, setDb] = useState(null);
-    const [storage, setStorage] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [showLoginModal, setShowLoginModal] = useState(false);
-    const [loginError, setLoginError] = useState('');
-    
-    const [itinerary, setItinerary] = useState([]);
-    const [tips, setTips] = useState([]);
-    const [todos, setTodos] = useState([]);
-    const [costs, setCosts] = useState([]);
-    const [packingList, setPackingList] = useState([]);
-    const [highlights, setHighlights] = useState([]);
-    const [mapLocations, setMapLocations] = useState([]);
-    const [suggestions, setSuggestions] = useState([]); // For future use
-
-    const [activeTab, setActiveTab] = useState('reiseplan');
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState(null);
-    
-    const [openDayId, setOpenDayId] = useState(null);
-    const [editingItem, setEditingItem] = useState(null);
-    const [newCost, setNewCost] = useState({ description: '', category: 'Sonstiges', amount: '' });
-    const [newItemText, setNewItemText] = useState({ todo: {text: '', title: '', cost: ''}, packing: {text: ''} });
-    const [activeFunFact, setActiveFunFact] = useState({dayId: null, fact: ''});
-    const [isFunFactLoading, setIsFunFactLoading] = useState(false);
-
-    // --- Firebase Initialization and Data Seeding ---
-    useEffect(() => {
-        try {
-            const app = initializeApp(firebaseConfig);
-            const firestoreDb = getFirestore(app);
-            const firestoreStorage = getStorage(app);
-            const auth = getAuth(app);
-            setDb(firestoreDb);
-            setStorage(firestoreStorage);
-
-            onAuthStateChanged(auth, async (user) => {
-                let currentUserId = user?.uid;
-                if (!currentUserId) {
-                    try {
-                       const cred = await signInAnonymously(auth); currentUserId = cred.user.uid;
-                    } catch(err) { setError("Authentifizierung fehlgeschlagen."); setIsLoading(false); return; }
-                }
-                setUserId(currentUserId);
-                
-                const metaDocRef = doc(firestoreDb, `artifacts/${appId}/users/${currentUserId}/meta/state`);
-                await runTransaction(firestoreDb, async (transaction) => {
-                    const metaDoc = await transaction.get(metaDocRef);
-                    if (!metaDoc.exists() || !metaDoc.data().seeded_v10) {
-                         const collections = { itinerary: initialItineraryData, tips: initialTipsData, todos: initialTodosData, packingList: initialPackingData, highlights: initialHighlightsData, mapLocations: [] };
-                        for (const [colName, data] of Object.entries(collections)) {
-                            const colRef = collection(firestoreDb, `artifacts/${appId}/users/${currentUserId}/${colName}`);
-                            data.forEach(item => {
-                                const docRef = item.id ? doc(colRef, item.id) : doc(colRef);
-                                transaction.set(docRef, { ...item, createdAt: serverTimestamp() });
-                            });
-                        }
-                        transaction.set(metaDocRef, { seeded_v10: true }, { merge: true });
-                    }
-                });
-                setIsAuthReady(true);
-            });
-        } catch (e) { setError("App konnte nicht initialisiert werden."); setIsLoading(false); console.error(e); }
-    }, []);
-
-    // --- Real-time Data Fetching ---
-    useEffect(() => {
-        if (!isAuthReady || !db || !userId) return;
-        const collectionsToFetch = ['itinerary', 'tips', 'todos', 'costs', 'packingList', 'highlights', 'suggestions', 'mapLocations'];
-        const unsubscribers = [];
-        let loadedCount = 0;
-        
-        setIsLoading(true);
-        collectionsToFetch.forEach(colName => {
-            const q = query(collection(db, `artifacts/${appId}/users/${userId}/${colName}`), orderBy("createdAt"));
-            const unsub = onSnapshot(q, (snap) => {
-                const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                if (colName === 'itinerary') setItinerary(data.sort((a,b) => a.dayNum - b.dayNum).map(d => ({...d, activities: JSON.parse(d.activities || '[]'), photos: d.photos || [] })));
-                else if (colName === 'highlights') setHighlights(data);
-                else if (colName === 'tips') setTips(data);
-                else if (colName === 'todos') setTodos(data);
-                else if (colName === 'costs') setCosts(data);
-                else if (colName === 'packingList') setPackingList(data);
-                else if (colName === 'suggestions') setSuggestions(data);
-                else if (colName === 'mapLocations') setMapLocations(data);
-                
-                loadedCount++;
-                if(loadedCount === collectionsToFetch.length) setIsLoading(false);
-            }, (err) => { console.log(`Fehler bei ${colName}:`, err); });
-            unsubscribers.push(unsub);
-        });
-
-        return () => unsubscribers.forEach(unsub => unsub());
-    }, [isAuthReady, db, userId]);
-
-    // --- CRUD Handlers ---
-    const handleUpdateImage = async (collectionName, docId, file, url) => {
-        if (!storage || !userId) return;
-        let newImageUrl = url;
-        if(file) {
-            const storageRef = ref(storage, `artifacts/${appId}/users/${userId}/${collectionName}/${docId}_${file.name}`);
-            await uploadBytes(storageRef, file);
-            newImageUrl = await getDownloadURL(storageRef);
-        }
-        if (newImageUrl) {
-            await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/${collectionName}`, docId), { imageUrl: newImageUrl });
-        }
-    };
-    
-     const handleSave = async (item) => {
-        if (!isAuthenticated) return;
-        if (!db || !userId) return;
-        const { type, id, ...data } = item;
-        let path = `artifacts/${appId}/users/${userId}/${type === 'day' ? 'itinerary' : type}`;
-        let payload = {...data};
-        if (type === 'day') {
-            payload.activities = JSON.stringify(data.activities || '[]');
-            payload.photos = data.photos || [];
-        }
-        try {
-            if (id) await updateDoc(doc(db, path, id), payload);
-            else await addDoc(collection(db, path), { ...payload, createdAt: serverTimestamp() });
-        } catch(e) { console.error("Save error:", e); setError("Speichern fehlgeschlagen.")}
-        setEditingItem(null);
-    };
-
-    const handleDelete = async (collectionName, id) => {
-        if (!isAuthenticated) return;
-        if (!db || !userId) return;
-        await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/${collectionName}`, id));
-    };
-
-    const handleToggleCheck = async (collectionName, id, currentStatus) => {
-        if (!isAuthenticated) return;
-        if (!db || !userId) return;
-        await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/${collectionName}`, id), { completed: !currentStatus });
-    };
-
-    const handleAddCost = async () => {
-        if (!isAuthenticated) return;
-        if (!newCost.description || !newCost.amount) return;
-        await addDoc(collection(db, `artifacts/${appId}/users/${userId}/costs`), { ...newCost, amount: parseFloat(newCost.amount), createdAt: serverTimestamp() });
-        setNewCost({ description: '', category: 'Sonstiges', amount: '' });
-    };
-
-    const handleAddItem = async (listType) => {
-        if (!isAuthenticated) return;
-        if (listType === 'packing') {
-            const text = newItemText.packing.text;
-            if (!text.trim()) return;
-            await addDoc(collection(db, `artifacts/${appId}/users/${userId}/packingList`), { text, completed: false, category: 'Sonstiges', createdAt: serverTimestamp() });
-            setNewItemText(prev => ({ ...prev, packing: {text: ''} }));
-        } else if (listType === 'todo') {
-            const { text, title, cost } = newItemText.todo;
-            if (!text.trim() && !title.trim()) return;
-            await addDoc(collection(db, `artifacts/${appId}/users/${userId}/todos`), { text, title, cost: parseFloat(cost) || 0, completed: false, category: 'Allgemein', createdAt: serverTimestamp() });
-            if (cost && parseFloat(cost) > 0) {
-                 await addDoc(collection(db, `artifacts/${appId}/users/${userId}/costs`), { description: `ToDo: ${title || text}`, category: 'ToDo', amount: parseFloat(cost), createdAt: serverTimestamp() });
+    <script>
+        const itineraryData = [
+            {
+                day: "Tag 1",
+                date: "28. Oktober",
+                title: "Ankunft in Bangkok & erste Eindrücke",
+                icon: "🇹🇭",
+                activities: [
+                    { time: "13:45 Uhr", desc: "Ankunft am Bangkok International Airport (BKK), Transfer zu Ihrem Hotel **Chatrium Riverside Bangkok** und Check-in." },
+                    { time: "Abend", desc: "Besuchen Sie die belebte **Asiatique Riverfront** mit ihren Geschäften, Restaurants und Shows. Genießen Sie anschließend eine stimmungsvolle **Dinner-Kreuzfahrt auf dem Chao Phraya Fluss**, um die beleuchteten Tempel und Wahrzeichen Bangkoks vom Wasser aus zu bestaunen." }
+                ]
+            },
+            {
+                day: "Tag 2",
+                date: "29. Oktober",
+                title: "Bangkok: Tempel & Kultur",
+                icon: "🏯",
+                activities: [
+                    { time: "Vormittag", desc: "Besuch des **Großen Palastes** und des **Wat Phra Kaeo (Tempel des Smaragd-Buddhas)**. Planen Sie hierfür viel Zeit ein." },
+                    { time: "Nachmittag", desc: "Erkundung des **Wat Pho (Tempel des Liegenden Buddha)** und des **Wat Arun (Tempel der Morgenröte)** am Chao Phraya Fluss. Nutzen Sie die öffentlichen Boote für den Transport." },
+                    { time: "Abend", desc: "Entdecken Sie die Gassen von **Chinatown** und genießen Sie die vielfältige Streetfood-Szene." }
+                ]
+            },
+            {
+                day: "Tag 3",
+                date: "30. Oktober",
+                title: "Bangkok: Märkte & Stadtausblicke",
+                icon: "🛍️",
+                activities: [
+                    { time: "Vormittag", desc: "Besuch des lebhaften **Blumenmarktes Pak Khlong Talat**. Erleben Sie die Farben und Düfte des Marktes." },
+                    { time: "Mittag", desc: "Optionaler Besuch des **Jim Thompson Hauses**, einem Museum über die thailändische Seidenindustrie und Kunst." },
+                    { time: "Nachmittag", desc: "Entdecken Sie den modernen Teil Bangkoks. Shopping in einem der großen Einkaufszentren oder Besuch eines Rooftop-Bars für Drinks mit atemberaubender Aussicht." },
+                    { time: "Abend", desc: "Abschlussabend in Bangkok mit einem besonderen Essen oder Besuch eines Nachtmarktes (z.B. Jodd Fairs)." }
+                ]
+            },
+            {
+                day: "Tag 4",
+                date: "31. Oktober",
+                title: "Reise nach Chiang Rai (Flug) & Tempelkunst",
+                icon: "✈️",
+                activities: [
+                    { time: "Vormittag", desc: "Frühstück und Check-out aus Ihrem Hotel in Bangkok. Transfer zum Flughafen (BKK oder DMK)." },
+                    { time: "Mittag", desc: "Flug von Bangkok nach Chiang Rai (CEI)." },
+                    { time: "Nachmittag", desc: "Ankunft in Chiang Rai, Transfer zu Ihrem Hotel und Check-in. Besuch des ikonischen **Wat Rong Khun (Weißer Tempel)**, einer einzigartigen Kunstinstallation." },
+                    { time: "Abend", desc: "Abendessen in Chiang Rai und Bummel über den **Chiang Rai Night Bazaar**." }
+                ]
+            },
+            {
+                day: "Tag 5",
+                date: "01. November",
+                title: "Chiang Rai: Kunst & Reise nach Chiang Mai",
+                icon: "�🚌",
+                activities: [
+                    { time: "Vormittag", desc: "Besuch des farbenprächtigen **Wat Rong Suea Ten (Blauer Tempel)** und des mysteriösen **Baan Dam Museum (Schwarzes Haus)**." },
+                    { time: "Mittag", desc: "Mittagessen in Chiang Rai." },
+                    { time: "Nachmittag", desc: "Busfahrt von Chiang Rai nach Chiang Mai (ca. 3-4 Stunden). Ankunft und Check-in in Chiang Mai." },
+                    { time: "Abend", desc: "Entspanntes Abendessen in Chiang Mai nach der Reise." }
+                ]
+            },
+            {
+                day: "Tag 6",
+                date: "02. November",
+                title: "Chiang Mai: Altstadt & Tempel",
+                icon: "🏯",
+                activities: [
+                    { time: "Vormittag", desc: "Erkundung der historischen Altstadt von Chiang Mai. Besuch wichtiger Tempel wie **Wat Phra Singh** und **Wat Chedi Luang**." },
+                    { time: "Nachmittag", desc: "Besuch des entspannten Waldtempels **Wat Umong** mit seinen Tunneln oder des **Wat Suan Dok**." },
+                    { time: "Abend", desc: "Entdecken Sie das trendige Viertel **Nimmanhaemin Road**, bekannt für moderne Cafés und Restaurants." }
+                ]
+            },
+            {
+                day: "Tag 7",
+                date: "03. November",
+                title: "Chiang Mai: Bergtempel & lokale Märkte",
+                icon: "⛰️🛍️",
+                activities: [
+                    { time: "Vormittag", desc: "Ausflug zum berühmten Bergtempel **Wat Phra That Doi Suthep**. Genießen Sie die goldene Pracht und die Panoramaaussicht über Chiang Mai." },
+                    { time: "Nachmittag", desc: "Freizeit in Chiang Mai. Vielleicht ein Kochkurs oder eine entspannte Thai-Massage." },
+                    { time: "Abend", desc: "Eintauchen in das bunte Treiben der **Sunday Walking Street** (Ratchadamnoen Road) mit unzähligen Essensständen und Kunsthandwerk." }
+                ]
+            },
+            {
+                day: "Tag 8",
+                date: "04. November",
+                title: "Chiang Mai: Elefanten-Begegnung",
+                icon: "🐘",
+                activities: [
+                    { time: "Ganztägig", desc: "Besuch eines **ethischen Elefantenschutzgebietes**. Verbringen Sie einen unvergesslichen Tag mit Füttern und Beobachten der Elefanten (frühzeitige Buchung empfohlen!)." },
+                    { time: "Abend", desc: "Entspannung und Vorbereitung auf die bevorstehenden Lichterfeste." }
+                ]
+            },
+            {
+                day: "Tag 9",
+                date: "05. November",
+                title: "LOY KRATHONG - Fest der Lichter auf dem Wasser",
+                icon: "🌸",
+                activities: [
+                    { time: "Tagsüber", desc: "Die Stadt pulsiert in festlicher Vorbereitung. Spazieren Sie am **Ping River** und beobachten Sie die letzten Vorbereitungen. Besorgen Sie sich einen **Krathong**." },
+                    { time: "Abend", desc: "**HAUPTEREIGNIS!** Lassen Sie Ihren Krathong am Ping River (z.B. nahe der Narawat Bridge) zu Wasser. Erleben Sie die magische Atmosphäre mit Tausenden von Lichtern auf dem Wasser und spektakulären Feuerwerken. Seien Sie auf Menschenmassen vorbereitet." }
+                ]
+            },
+            {
+                day: "Tag 10",
+                date: "06. November",
+                title: "YI PENG - Fest der Himmelslaternen",
+                icon: "🏮",
+                activities: [
+                    { time: "Tagsüber", desc: "Erholen Sie sich von den gestrigen Feierlichkeiten oder besuchen Sie das charmante Künstlerdorf **Baan Kang Wat** etwas außerhalb der Altstadt." },
+                    { time: "Abend", desc: "**HAUPTEREIGNIS!** Finden Sie einen guten Platz (z.B. nahe der Brücken am Ping River oder dem Tha Pae Gate), um die Freilassung Tausender **Himmelslaternen (Khom Loi)** zu beobachten – ein unvergesslicher Anblick, der den Nachthimmel erhellt." }
+                ]
+            },
+            {
+                day: "Tag 11",
+                date: "07. November",
+                title: "Reise nach Bangkok (Nachtzug)",
+                icon: "🚂",
+                activities: [
+                    { time: "Vormittag/Nachmittag", desc: "Letzter Vormittag/Nachmittag in Chiang Mai für entspannte Aktivitäten oder letzte Einkäufe." },
+                    { time: "18:00 Uhr", desc: "Check-out aus dem Hotel. Transfer zum Bahnhof Chiang Mai. Abfahrt mit dem **Nachtzug nach Bangkok**." }
+                ]
+            },
+            {
+                day: "Tag 12",
+                date: "08. November",
+                title: "Bangkok: Chatuchak & Flug nach Phuket",
+                icon: "🛍️✈️",
+                activities: [
+                    { time: "06:50 Uhr", desc: "Ankunft des Nachtzugs in Bangkok (Krung Thep Aphiwat Central Terminal oder Hua Lamphong, je nach Zug). Transfer zu einem Tageshotel oder Gepäckaufbewahrung am Bahnhof. Frühstücken." },
+                    { time: "09:00-13:00 Uhr", desc: "Besuch des **Chatuchak Wochenendmarktes**. Tauchen Sie ein in das geschäftige Treiben, entdecken Sie Souvenirs, Kleidung, Kunsthandwerk und probieren Sie Streetfood. **Wichtiger Hinweis:** Freitag ist ein spezieller Tag für den Chatuchak Markt. Normalerweise sind nur die Großhändler und bestimmte Bereiche geöffnet. Wenn Sie den Markt umfassend erleben möchten, prüfen Sie die spezifischen Öffnungszeiten für diesen Tag. Es könnte sein, dass nicht alle Stände geöffnet sind. Planen Sie ausreichend Zeit für den Transfer vom Bahnhof zum Markt und später zum Flughafen ein." },
+                    { time: "Nachmittag (ca. 14:00 Uhr)", desc: "Transfer zum Flughafen Don Mueang (DMK) für Ihren Flug nach Phuket. Seien Sie pünktlich für Ihren Flug um 16:00 Uhr." },
+                    { time: "Später Nachmittag (ca. 16:00 Uhr)", desc: "Flug von Bangkok (DMK) nach Phuket (HKT). Ankunft in Phuket, Transfer zum Hotel und Check-in." },
+                    { time: "Abend", desc: "Erstes Abendessen in Phuket." }
+                ]
+            },
+            {
+                day: "Tag 13",
+                date: "09. November",
+                title: "Phuket: Strände & Kultur",
+                icon: "🏖️",
+                activities: [
+                    { time: "Ganztägig", desc: "Erkundung der schönsten Strände von Phuket (z.B. Karon, Kata, Patong). Besuch des **Big Buddha** für Panoramablick und des charmanten **Phuket Old Town** mit seinen bunten Shophouses. Optional: Wat Chalong." },
+                    { time: "Abend", desc: "Genießen Sie das Nachtleben in Patong oder ein entspanntes Essen am Strand." }
+                ]
+            },
+            {
+                day: "Tag 14",
+                date: "10. November",
+                title: "Phuket: Inselwelt Phang Nga Bay",
+                icon: "⛰️",
+                activities: [
+                    { time: "Ganztägig", desc: "Tagesausflug zur spektakulären **Phang Nga Bucht** mit James Bond Island, Seekajakfahren durch Kalksteinhöhlen und Mangroven (organisierte Tour). Eine atemberaubende Naturlandschaft." },
+                    { time: "Abend", desc: "Entspannen Sie nach dem ereignisreichen Tag." }
+                ]
+            },
+            {
+                day: "Tag 15",
+                date: "11. November",
+                title: "Phuket: Tagesausflug Similan Inseln",
+                icon: "🏝️",
+                activities: [
+                    { time: "Ganztägig (sehr früh)", desc: "Ganztägiger Ausflug mit dem Schnellboot zu den **Similan Inseln**, einem der schönsten Schnorchel- und Tauchgebiete der Welt. Genießen Sie die unberührten Strände und das kristallklare Wasser. Beachten Sie, dass dies ein sehr langer und anstrengender Tag sein wird (sehr früher Start, lange Bootsfahrt)." }
+                ]
+            },
+            {
+                day: "Tag 16",
+                date: "12. November",
+                title: "Phuket: Entspannung & Erholung",
+                icon: " relaxing",
+                activities: [
+                    { time: "Ganztägig", desc: "Ein entspannter Tag in Phuket. Erholen Sie sich von den langen Ausflügen, genießen Sie den Strand oder Pool und lassen Sie die Seele baumeln." }
+                ]
+            },
+            {
+                day: "Tag 17",
+                date: "13. November",
+                title: "Phuket: Lokale Einblicke & Vorbereitung",
+                icon: "👋",
+                activities: [
+                    { time: "Vormittag", desc: "Optionaler Besuch eines lokalen Elefanten-Sanctuaries (bitte recherchieren Sie sorgfältig die Ethik) oder des Phuket Elephant Sanctuary. Alternativ: letzte Einkäufe oder eine entspannende Thai-Massage." },
+                    { time: "Nachmittag", desc: "Vorbereitung für die Weiterreise. Packen und Entspannen." },
+                    { time: "Abend", desc: "Abschiedsessen in Phuket." }
+                ]
+            },
+            {
+                day: "Tag 18",
+                date: "14. November",
+                title: "Reise nach Koh Phi Phi",
+                icon: "🚤",
+                activities: [
+                    { time: "Vormittag", desc: "Check-out aus Ihrem Hotel in Phuket. Transfer zum Pier (z.B. Rassada Pier)." },
+                    { time: "Mittag", desc: "Fähre oder Speedboat nach **Koh Phi Phi Don** (ca. 1,5 - 2 Stunden). Die bekannteste der Phi Phi Inseln." },
+                    { time: "Nachmittag", desc: "Ankunft, Check-in in Ihrer Unterkunft. Erkundung von Koh Phi Phi Don. Wanderung zum **Koh Phi Phi Viewpoint** für spektakuläre Ausblicke, besonders zum Sonnenuntergang." },
+                    { time: "Abend", desc: "Erleben Sie das lebhafte Inselleben und die Strandpartys, wenn gewünscht." }
+                ]
+            },
+            {
+                day: "Tag 19",
+                date: "15. November",
+                title: "Koh Phi Phi Leh & Schnorchelparadies",
+                icon: "🤿",
+                activities: [
+                    { time: "Ganztägig", desc: "Bootsausflug (Longtail-Boot oder Speedboat) rund um die atemberaubende Insel **Koh Phi Phi Leh**. Bestaunen Sie die berühmte **Maya Bay** (vom Boot aus), schwimmen Sie in der **Pileh Lagoon** und schnorcheln Sie in der **Loh Samah Bay**. Optional: Besuch von Bamboo Island oder Mosquito Island." },
+                    { time: "Abend", desc: "Genießen Sie ein Abendessen mit Blick auf das Meer." }
+                ]
+            },
+            {
+                day: "Tag 20",
+                date: "16. November",
+                title: "Reise nach Koh Kradan",
+                icon: "🐢",
+                activities: [
+                    { time: "Vormittag", desc: "Check-out aus Ihrem Hotel auf Koh Phi Phi. Reise mit einer Fähre/Speedboat-Kombination nach **Koh Kradan** (oft über Koh Lanta oder dem Festland-Pier Hat Yao/Pak Meng). Eine der ruhigsten und malerischsten Inseln der Trang-Provinz." },
+                    { time: "Nachmittag", desc: "Ankunft, Check-in in Ihrer Unterkunft. Entspannen Sie am puderweißen Strand und genießen Sie die unberührte Natur." },
+                    { time: "Abend", desc: "Ruhiges Abendessen im Resort oder an einem der wenigen Strandrestaurants." }
+                ]
+            },
+            {
+                day: "Tag 21",
+                date: "17. November",
+                title: "Koh Kradan: Entspannung & Emerald Cave",
+                icon: "🏝️",
+                activities: [
+                    { time: "Ganztägig", desc: "Entspannung pur am Strand von Koh Kradan. Die Insel ist ideal zum Schwimmen und Schnorcheln direkt vom Ufer aus. Optional: Organisieren Sie einen Bootsausflug zur nahegelegenen **Emerald Cave (Höhle des Smaragdes)** auf Koh Mook – ein einzigartiges Schwimmerlebnis durch eine dunkle Höhle zu einer versteckten Lagune." }
+                ]
+            },
+            {
+                day: "Tag 22",
+                date: "18. November",
+                title: "Reise nach Koh Lanta",
+                icon: "🛵",
+                activities: [
+                    { time: "Vormittag", desc: "Check-out aus Ihrem Hotel auf Koh Kradan. Transfer zum Festland (Pak Meng Pier bei Trang) per Speedboat/Fähre." },
+                    { time: "Mittag", desc: "Weiterfahrt mit dem Minivan/Fähre nach **Koh Lanta** (ca. 2-3 Stunden). Ankunft und Check-in in Ihrer Unterkunft." },
+                    { time: "Nachmittag", desc: "Entspannen Sie am Strand (z.B. Long Beach) und genießen Sie die entspannte Atmosphäre von Koh Lanta." },
+                    { time: "Abend", desc: "Abendessen in einem der Strandrestaurants." }
+                ]
+            },
+            {
+                day: "Tag 23",
+                date: "19. November",
+                title: "Koh Lanta: Strände & Nationalpark",
+                icon: "🐒",
+                activities: [
+                    { time: "Ganztägig", desc: "Mieten Sie einen Roller (falls Sie sicher fahren) und erkunden Sie die Insel. Besuchen Sie den **Mu Koh Lanta Nationalpark** an der Südspitze mit seinem Leuchtturm und den Affen. Entdecken Sie verschiedene Strände wie Ao Nui Bay oder Klong Nin Beach." },
+                    { time: "Abend", desc: "Sonnenuntergang am Strand und gemütliches Abendessen." }
+                ]
+            },
+            {
+                day: "Tag 24",
+                date: "20. November",
+                title: "Reise nach Krabi (Ao Nang)",
+                icon: "⛵",
+                activities: [
+                    { time: "Vormittag", desc: "Check-out aus Ihrem Hotel auf Koh Lanta. Reise nach **Ao Nang, Krabi** (ca. 1,5 - 2 Stunden mit Minivan/Fähre)." },
+                    { time: "Nachmittag", desc: "Ankunft in Ao Nang, Check-in in Ihrer Unterkunft. Entspannen Sie am Ao Nang Beach oder erkunden Sie die belebte Promenade." },
+                    { time: "Abend", desc: "Abendessen in Ao Nang, vielleicht ein Besuch des lokalen Nachtmarktes." }
+                ]
+            },
+            {
+                day: "Tag 25",
+                date: "21. November",
+                title: "Krabi: Traumstrand Railay & Klettern",
+                icon: "🧗",
+                activities: [
+                    { time: "Ganztägig", desc: "Tagesausflug mit dem Longtail-Boot zum atemberaubenden **Railay Beach** (nur per Boot erreichbar). Entspannen Sie an den Stränden (West Railay, Phra Nang Cave Beach), beobachten Sie die Kletterer an den Kalksteinfelsen oder erklimmen Sie den anspruchsvollen Viewpoint." },
+                    { time: "Abend", desc: "Rückkehr nach Ao Nang. Genießen Sie frische Meeresfrüchte." }
+                ]
+            },
+            {
+                day: "Tag 26",
+                date: "22. November",
+                title: "Krabi: Die 4 Inseln Tour",
+                icon: "🐠",
+                activities: [
+                    { time: "Ganztägig", desc: "Nehmen Sie an einer klassischen **Vier Insel Tour** teil (Longtail-Boot oder Speedboat). Besuchen Sie ikonische Inseln wie Chicken Island, Tup Island und Poda Island zum Schnorcheln und Schwimmen." },
+                    { time: "Abend", desc: "Entspannen Sie sich nach einem Tag auf dem Meer." }
+                ]
+            },
+            {
+                day: "Tag 27",
+                date: "23. November",
+                title: "Krabi nach Bangkok (Flug) & letzte Stadt-Eindrücke",
+                icon: "✈️",
+                activities: [
+                    { time: "Vormittag", desc: "Check-out aus Ihrem Hotel in Krabi, Transfer zum Krabi International Airport (KBV)." },
+                    { time: "Mittag", desc: "Flug von Krabi nach Bangkok (BKK/DMK)." },
+                    { time: "Nachmittag", desc: "Ankunft in Bangkok, Transfer zu Ihrem Hotel **Carlton Sukhumvit** und Check-in." },
+                    { time: "Abend", desc: "Freizeit in Bangkok, um letzte Eindrücke zu sammeln oder ein Abschiedsessen zu genießen." }
+                ]
+            },
+            {
+                day: "Tag 28",
+                date: "24. November",
+                title: "Bangkok: Individuelle Erkundung",
+                icon: "🚶",
+                activities: [
+                    { time: "Ganztägig", desc: "Freizeit und individuelle Erkundung in Bangkok, wie von Ihnen gewünscht. Nutzen Sie die Zeit, um unerledigte Dinge zu erledigen oder einfach die Stadt auf sich wirken zu lassen." }
+                ]
+            },
+            {
+                day: "Tag 29",
+                date: "25. November",
+                title: "Bangkok: Individuelle Erkundung & letzte Vorbereitung",
+                icon: "🎁",
+                activities: [
+                    { time: "Ganztägig", desc: "Freizeit und individuelle Erkundung in Bangkok. Letzte Einkäufe für Souvenirs oder Geschenke. Packen und Vorbereitung für die Abreise." }
+                ]
+            },
+            {
+                day: "Tag 30",
+                date: "26. November",
+                title: "Abreise von Thailand",
+                icon: "👋",
+                activities: [
+                    { time: "Vormittag", desc: "Je nach Abflugzeit: Zeit für ein letztes thailändisches Frühstück oder einen entspannten Vormittag." },
+                    { time: "12:40 Uhr", desc: "Transfer zum Bangkok International Airport (BKK/DMK) für Ihren Rückflug." }
+                ]
             }
-            setNewItemText(prev => ({ ...prev, todo: { text: '', title: '', cost: '' } }));
-        }
-    };
-    
-    const handleAddPhoto = (dayId, url) => {
-        if (!isAuthenticated) return;
-        const day = itinerary.find(d => d.id === dayId);
-        if(day && url){
-            const updatedPhotos = [...(day.photos || []), url];
-            handleSave({type: 'day', ...day, photos: updatedPhotos });
-        }
-    };
-    
-    const handleDeletePhoto = (dayId, photoIndex) => {
-        if (!isAuthenticated) return;
-        const day = itinerary.find(d => d.id === dayId);
-        if(day){
-            const updatedPhotos = day.photos.filter((_, i) => i !== photoIndex);
-            handleSave({type: 'day', ...day, photos: updatedPhotos });
-        }
-    };
+        ];
 
-    const handleLogin = (username, password) => {
-        if (username === 'flotastic' && password === 'teddy21') {
-            setIsAuthenticated(true);
-            setShowLoginModal(false);
-            setLoginError('');
-        } else {
-            setLoginError('Falsche Anmeldedaten. Änderungen können nur vorgeschlagen werden.');
+        const tipsData = [
+            { icon: "✈️", title: "Früh buchen", text: "Sie reisen in der absoluten Hochsaison. Buchen Sie Flüge (insbesondere Inlandsflüge) und Unterkünfte so früh wie möglich, da Preise steigen und die Verfügbarkeit abnimmt." },
+            { icon: "🚕", title: "Transport", text: "Planen Sie stets Pufferzeiten für den Transport ein, besonders an langen Reisetagen und während der Festivals. Nutzen Sie Grab (Taxi-App) für bequeme Fahrten in den Städten. Bedenken Sie, dass die Reisen zwischen den Inseln und die letzten Flüge längere Reisetage sind." },
+            { icon: "🧘", title: "Flexibilität", text: "Der Reiseplan ist sehr detailliert und intensiv. Bleiben Sie flexibel und passen Sie ihn Ihrem Energieniveau und den lokalen Gegebenheiten an. Nicht jeder Punkt muss strikt befolgt werden. Manchmal ist es besser, eine Aktivität auszulassen und sich zu entspannen." },
+            { icon: "👨‍👩‍👧‍👦", title: "Menschenmassen", text: "Insbesondere während der Loy Krathong und Yi Peng Festivals sowie an beliebten Orten im Süden (z.B. Koh Phi Phi) wird es sehr voll sein. Seien Sie darauf vorbereitet, aber lassen Sie sich davon nicht die Freude nehmen." },
+            { icon: "🌿", title: "Nachhaltigkeit", text: "Achten Sie auf umweltfreundliche Praktiken. Kaufen Sie Krathongs aus natürlichen Materialien (Bananenblätter, Brot) und unterstützen Sie ethischen Elefantentourismus (kein Reiten). Nehmen Sie Ihren Müll stets mit und entsorgen Sie ihn umweltgerecht." },
+            { icon: "☀️", title: "Sonnenschutz", text: "In Thailand ist die Sonne sehr stark. Denken Sie immer an Sonnencreme (LSF 50+), Kopfbedeckung und ausreichend Wasser, besonders bei Ausflügen und am Strand. Tragen Sie leichte, atmungsaktive Kleidung." },
+            { icon: "🛍️", title: "Chatuchak Wochenendmarkt", text: "Der Chatuchak Markt ist hauptsächlich ein Wochenendmarkt (Samstag & Sonntag). Am Freitag (dem 8. November) sind normalerweise nur die Großhändler und bestimmte Bereiche geöffnet. Wenn Sie den Markt umfassend erleben möchten, empfehle ich, die spezifischen Öffnungszeiten für diesen Tag zu prüfen. Es könnte sein, dass nicht alle Stände geöffnet sind." },
+            { icon: "🏞️", title: "Hinweis zu Koh Lanta", text: "Koh Lanta bietet eine entspanntere Atmosphäre als viele andere Inseln. Erkunden Sie die Strände und den Nationalpark. Roller mieten ist beliebt, aber fahren Sie vorsichtig und nur mit entsprechender Erfahrung und Lizenz." },
+            { icon: "❌", title: "Hinweis zu Kanchanaburi & Pai", text: "Aufgrund des sehr vollen Zeitplans und der Priorität der von Ihnen genannten Ziele, wurden Kanchanaburi (abgesehen von der ursprünglichen Idee des Erawan-Wasserfalls) und Pai in diesem Reiseplan nicht berücksichtigt, um die Reise nicht zu gehetzt zu gestalten." },
+            { icon: "✨", title: "Interaktive Infos", text: "Klicken Sie auf '✨ Interessante Info' bei den Tagesplänen, um kleine wissenswerte Fakten oder kulturelle Einblicke zu den Aktivitäten des Tages zu erhalten. Diese Funktion wird durch die Gemini API bereitgestellt." }
+        ];
+
+        const contentArea = document.getElementById('content-area');
+        const navButtons = {
+            reiseplan: document.getElementById('nav-reiseplan'),
+            festival: document.getElementById('nav-festival'),
+            hinweise: document.getElementById('nav-hinweise')
+        };
+        let activityChart = null;
+
+        function formatText(text) {
+            return text.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-teal-700">$1</strong>');
         }
-    };
-    
-    const generateFunFact = async (dayData) => {
-        setIsFunFactLoading(true);
-        setActiveFunFact({ dayId: dayData.id, fact: '' });
-        const prompt = `Generiere einen kurzen, interessanten Fakt oder kulturellen Einblick (maximal 2 Sätze) zu folgenden Reiseaktivitäten in Thailand: ${dayData.activities.map(a => a.desc).join('; ')}. Antworte nur mit dem Fakt.`;
-        try {
-            const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+
+        // --- Gemini API Integration for Fun Facts ---
+        async function generateFunFact(dayData, factDisplayElement) {
+            factDisplayElement.innerHTML = '<span class="loading-spinner"></span> Lade interessante Info...';
+            const promptContent = `Generiere einen kurzen, interessanten Fakt oder kulturellen Einblick (maximal 2 Sätze) zu folgenden Reiseaktivitäten in Thailand: ${dayData.activities.map(a => a.desc).join('; ')}. Beziehe dich auf die einzigartigen Aspekte oder die kulturelle Bedeutung. Antworte nur mit dem Fakt/Einblick.`;
+
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: promptContent }] });
+
             const payload = { contents: chatHistory };
-            const apiKey = "";
+            // Ensure the API key is correctly accessed from the Canvas environment
+            const apiKey = 'AIzaSyAHSXmXjv7qga_OJOGBWTHJJv1_mxNbTYM';
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            const data = await response.json();
-            setActiveFunFact({ dayId: dayData.id, fact: data.candidates?.[0]?.content?.parts?.[0]?.text || "Konnte keine Info finden." });
-        } catch (error) { setActiveFunFact({ dayId: dayData.id, fact: "Fehler beim Laden der Info." }); } 
-        finally { setIsFunFactLoading(false); }
-    };
 
-    // --- Components for Tabs ---
-    const CheckList = ({ title, items, onAdd, onToggle, onDelete, itemKey, placeholder, icon }) => (
-        <div className="p-6 bg-white rounded-2xl shadow-lg">
-            <h2 className="text-2xl font-bold text-slate-800 mb-4 flex items-center gap-2">{icon}{title}</h2>
-            <div className="flex flex-col sm:flex-row gap-2 mb-4">
-                {itemKey === 'todo' ? (
-                    <>
-                        <input type="text" value={newItemText[itemKey].title} onChange={e => setNewItemText(p => ({...p, [itemKey]: {...p[itemKey], title: e.target.value}}))} placeholder="Titel (z.B. Hotel Bangkok)" className="w-full p-2 border border-slate-300 rounded-lg"/>
-                        <input type="text" value={newItemText[itemKey].text} onChange={e => setNewItemText(p => ({...p, [itemKey]: {...p[itemKey], text: e.target.value}}))} placeholder="Beschreibung..." className="w-full p-2 border border-slate-300 rounded-lg"/>
-                         <input type="number" value={newItemText[itemKey].cost} onChange={e => setNewItemText(p => ({...p, [itemKey]: {...p[itemKey], cost: e.target.value}}))} placeholder="Kosten (€)" className="w-full sm:w-1/4 p-2 border border-slate-300 rounded-lg"/>
-                    </>
-                ) : (
-                     <input type="text" value={newItemText[itemKey].text} onChange={e => setNewItemText(p => ({...p, [itemKey]: {...p[itemKey], text: e.target.value}}))} placeholder={placeholder} className="w-full p-2 border border-slate-300 rounded-lg"/>
-                )}
-                <button onClick={() => onAdd(itemKey)} disabled={!isAuthenticated} className="bg-teal-600 text-white px-4 py-2 rounded-lg font-semibold shrink-0 disabled:bg-slate-400 disabled:cursor-not-allowed">Add</button>
-            </div>
-            {Object.entries(items.reduce((acc, item) => { (acc[item.category] = acc[item.category] || []).push(item); return acc; }, {})).map(([category, catItems]) => (
-                <div key={category} className="mb-4">
-                    <h3 className="font-bold text-teal-700 mb-2">{category}</h3>
-                    <ul className="space-y-2">
-                        {catItems.sort((a,b) => a.createdAt?.seconds - b.createdAt?.seconds).map(item => (
-                            <li key={item.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg group">
-                                <div className="flex items-center cursor-pointer flex-grow" onClick={() => onToggle(itemKey === 'todo' ? 'todos' : 'packingList', item.id, item.completed)}>
-                                    {item.completed ? <CheckCircle size={20} className="text-teal-500 shrink-0"/> : <Circle size={20} className="text-slate-400 shrink-0"/>}
-                                    <span className={`ml-3 ${item.completed ? 'line-through text-slate-400' : ''}`}>{item.title || item.text} {item.cost > 0 && `(€${item.cost})`}</span>
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json(); // Await the JSON parsing
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    factDisplayElement.innerHTML = `<div class="fun-fact-container">${text}</div>`;
+                } else {
+                    factDisplayElement.innerHTML = `<div class="fun-fact-container text-red-700">Fehler: Konnte keine interessante Info generieren. Bitte versuchen Sie es später erneut.</div>`;
+                    console.error("Gemini API response structure unexpected:", result);
+                }
+            } catch (error) {
+                factDisplayElement.innerHTML = `<div class="fun-fact-container text-red-700">Fehler beim Laden der Info: ${error.message}</div>`;
+                console.error("Error calling Gemini API:", error);
+            }
+        }
+        // --- End Gemini API Integration ---
+
+        function renderItinerary() {
+            let html = `
+                <div class="space-y-4">
+                    <div class="bg-white/60 backdrop-blur-sm p-4 sm:p-6 rounded-2xl shadow-sm border border-stone-200/80">
+                       <p class="text-stone-700 text-center">Dies ist Ihr täglicher Leitfaden für ein unvergessliches Abenteuer durch Thailand. Starten Sie in Bangkok, entdecken Sie die Kunst und Natur in Chiang Rai und Chiang Mai mit den magischen Lichterfesten, bevor Sie die traumhaften Inseln des Südens erkunden. Klicken Sie auf einen Tag, um die detaillierten Pläne zu entdecken.</p>
+                    </div>
+            `;
+            itineraryData.forEach((day, index) => {
+                html += `
+                    <div class="day-card bg-white/60 backdrop-blur-sm rounded-2xl shadow-sm border border-stone-200/80 overflow-hidden" data-day="${index}">
+                        <div class="day-card-header p-4 sm:p-5 flex items-center justify-between transition hover:bg-teal-50/50">
+                            <div class="flex items-center space-x-4">
+                                <span class="text-3xl">${day.icon}</span>
+                                <div>
+                                    <h3 class="font-bold text-lg text-teal-800">${day.day}: ${day.title}</h3>
+                                    <p class="text-sm text-stone-500">${day.date}</p>
                                 </div>
-                                {isAuthenticated && <button onClick={() => onDelete(itemKey === 'todo' ? 'todos' : 'packingList', item.id)} className="opacity-0 group-hover:opacity-100 text-red-500 p-1 shrink-0"><Trash2 size={16}/></button>}
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            ))}
-        </div>
-    );
+                            </div>
+                            <svg class="w-6 h-6 text-teal-600 transform transition-transform chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                            </svg>
+                        </div>
+                        <div class="accordion-content">
+                            <div class="p-4 sm:p-6 border-t border-stone-200/80 space-y-4">
+                                ${day.activities.map(activity => `
+                                    <div class="flex items-start">
+                                        <div class="w-1/4 sm:w-1/5 text-sm font-semibold text-stone-600">${activity.time}</div>
+                                        <div class="w-3/4 sm:w-4/5 text-stone-700">${formatText(activity.desc)}</div>
+                                    </div>
+                                `).join('')}
+                                <button class="fun-fact-button" data-day-index="${index}">
+                                    ✨ Interessante Info
+                                </button>
+                                <div id="funFactDisplay-${index}" class="fun-fact-display mt-2"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            contentArea.innerHTML = html;
 
-    const MapView = ({locations}) => {
-        const mapRef = useRef(null);
-        const mapInstance = useRef(null);
-        const [expandedLocation, setExpandedLocation] = useState(null);
-        
-        const handleLocationClick = (locName, coords) => {
-             if (mapInstance.current) {
-                mapInstance.current.setView(coords, 9);
-            }
-            setExpandedLocation(prev => prev === locName ? null : locName);
-        };
-    
-        useEffect(() => {
-            let L;
-            const loadMap = () => {
-                if (mapRef.current && !mapInstance.current) {
-                    mapInstance.current = L.map(mapRef.current).setView([12.5, 99.9], 5.5);
-                    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                    }).addTo(mapInstance.current);
-                    
-                    locations.forEach((loc, index) => {
-                        const icon = L.divIcon({
-                            className: 'custom-div-icon',
-                            html: `<div class='marker-pin'></div><div class='marker-number'>${index + 1}</div>`,
-                            iconSize: [30, 42],
-                            iconAnchor: [15, 42]
-                        });
-                        L.marker(loc.coords, { icon: icon }).addTo(mapInstance.current).bindPopup(`${loc.name}`);
-                    });
-    
-                    const latlngs = locations.map(l => l.coords);
-                    L.polyline(latlngs, {color: '#0d9488', weight: 3, opacity: 0.7, dashArray: '5, 10'}).addTo(mapInstance.current);
-                }
-            };
-    
-            if (typeof window.L === 'undefined') {
-                const leafletCss = document.createElement('link');
-                leafletCss.rel = 'stylesheet';
-                leafletCss.href = 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.css';
-                document.head.appendChild(leafletCss);
-                
-                const script = document.createElement('script');
-                script.src = 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.js';
-                document.body.appendChild(script);
-                script.onload = () => {
-                    L = window.L;
-                    loadMap();
-                };
-            } else {
-                L = window.L;
-                loadMap();
-            }
-    
-            return () => {
-                if (mapInstance.current) {
-                    mapInstance.current.remove();
-                    mapInstance.current = null;
-                }
-            };
-        }, [locations]);
-    
-        return (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div ref={mapRef} className="w-full min-h-[60vh] rounded-2xl shadow-lg z-0 bg-slate-200 md:col-span-2"></div>
-                <div className="bg-white p-4 rounded-2xl shadow-lg self-start">
-                    <h3 className="font-bold mb-3 text-lg">Reiseroute</h3>
-                    <ul className="space-y-1">
-                        {locations.map((loc, index) => (
-                           <li key={loc.name + index} className="border-b border-slate-100 last:border-b-0">
-                               <div onClick={() => handleLocationClick(loc.name, loc.coords)} className="flex items-center justify-between cursor-pointer p-2 rounded-lg hover:bg-slate-100">
-                                   <div className="flex items-center gap-3">
-                                        <span className="flex items-center justify-center w-6 h-6 bg-teal-600 text-white text-xs font-bold rounded-full shrink-0">{index + 1}</span>
-                                        <span className="font-semibold">{loc.name}</span>
-                                   </div>
-                                   <span className="text-xs text-slate-500 shrink-0">{loc.date}</span>
-                               </div>
-                               {expandedLocation === loc.name && (
-                                   <div className="p-2 transition-all duration-300">
-                                       <img src={loc.imageUrl} alt={`Vorschaubild von ${loc.name}`} className="w-full h-auto rounded-lg shadow-md animate-fade-in"/>
-                                   </div>
-                               )}
-                           </li>
-                        ))}
-                    </ul>
-                </div>
-            </div>
-        );
-    }
-    
-    const HighlightCard = ({ highlight }) => {
-        const fileInputRef = useRef(null);
-        const [isUploading, setIsUploading] = useState(false);
-        const [newImageUrl, setNewImageUrl] = useState('');
+            document.querySelectorAll('.day-card-header').forEach(header => {
+                header.addEventListener('click', () => {
+                    const card = header.parentElement;
+                    card.classList.toggle('active');
+                });
+            });
 
-        const onFileChange = async (e) => {
-            if (!isAuthenticated) return;
-            const file = e.target.files[0];
-            if (!file) return;
-            setIsUploading(true);
-            await handleUpdateHighlightImage(highlight.id, file, null);
-            setIsUploading(false);
-        };
-        
-        const onUrlChange = async () => {
-             if (!isAuthenticated || !newImageUrl) return;
-             setIsUploading(true);
-             await handleUpdateHighlightImage(highlight.id, null, newImageUrl);
-             setIsUploading(false);
-             setNewImageUrl('');
+            document.querySelectorAll('.fun-fact-button').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const dayIndex = event.target.dataset.dayIndex;
+                    const factDisplayElement = document.getElementById(`funFactDisplay-${dayIndex}`);
+                    generateFunFact(itineraryData[dayIndex], factDisplayElement);
+                });
+            });
         }
 
-        return (
-            <div className="bg-white p-4 rounded-xl shadow-md overflow-hidden group relative">
-                <img src={highlight.imageUrl} alt={highlight.title} className="w-full h-48 object-cover rounded-lg mb-3" onError={(e) => e.target.src='https://placehold.co/600x400/e2e8f0/94a3b8?text=Bild-Fehler'}/>
-                {isAuthenticated && (
-                    <>
-                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                             <button onClick={() => fileInputRef.current.click()} className="p-2 bg-white/80 rounded-full shadow-md hover:bg-white">
-                                <UploadCloud size={16} className="text-teal-600"/>
-                            </button>
-                            <input type="file" ref={fileInputRef} onChange={onFileChange} className="hidden" accept="image/*" />
-                        </div>
-                        <div className="mt-2 text-xs flex gap-1">
-                             <input type="text" value={newImageUrl} onChange={e=>setNewImageUrl(e.target.value)} placeholder="oder neue URL einfügen" className="w-full p-1 border rounded"/>
-                             <button onClick={onUrlChange} className="bg-slate-200 px-2 rounded">OK</button>
-                         </div>
-                    </>
-                 )}
-                {isUploading && <div className="absolute inset-0 bg-white/70 flex items-center justify-center"><Loader2 className="animate-spin text-teal-500"/></div>}
-                <h3 className="font-bold text-xl text-teal-800">{highlight.title}</h3>
-                <p className="text-stone-600 mt-1 text-sm">{highlight.description}</p>
-            </div>
-        );
-    };
+        function renderFestivalGuide() {
+            if (activityChart) {
+                activityChart.destroy();
+            }
 
-    const LoginModal = () => {
-        const [username, setUsername] = useState('');
-        const [password, setPassword] = useState('');
-
-        return (
-            <Modal onClose={() => setShowLoginModal(false)}>
-                <h2 className="text-2xl font-bold mb-4">Admin Login</h2>
-                <div className="space-y-4">
-                    <InputField label="Benutzername" icon={<Text size={16}/>} value={username} onChange={e => setUsername(e.target.value)} />
-                    <InputField label="Passwort" icon={<Lock size={16}/>} type="password" value={password} onChange={e => setPassword(e.target.value)} />
-                </div>
-                {loginError && <p className="text-red-600 text-sm mt-4">{loginError}</p>}
-                <div className="flex justify-end gap-3 mt-6">
-                    <button onClick={() => setShowLoginModal(false)} className="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 font-semibold text-slate-700 transition">Abbrechen</button>
-                    <button onClick={() => handleLogin(username, password)} className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold transition shadow-sm">Anmelden</button>
-                </div>
-            </Modal>
-        )
-    }
-    
-    // --- Render Logic ---
-    if (isLoading) return <div className="flex items-center justify-center h-screen bg-slate-100"><Loader2 className="w-12 h-12 animate-spin text-teal-600" /></div>;
-    if (error) return <div className="flex items-center justify-center h-screen bg-red-50 p-4"><p className="text-red-700 text-center">{error}</p></div>;
-
-    return (
-        <div className="bg-[#FDFBF8] min-h-screen font-sans text-slate-800 antialiased">
-            <GlobalStyles />
-            {showLoginModal && <LoginModal />}
-            {editingItem && <EditModal item={editingItem} onSave={handleSave} onClose={() => setEditingItem(null)} />}
-            <div className="container mx-auto px-4 py-8 sm:py-12">
-                <header className="text-center mb-10">
-                    <h1 className="text-4xl sm:text-5xl font-bold text-teal-800">Mein Thailand Reiseplaner</h1>
-                    <div className="flex items-center justify-center gap-2 mt-2">
-                        <p className="text-lg text-stone-600">All-in-One Planungstool</p>
-                        <button onClick={() => setShowLoginModal(true)} className="text-stone-500 hover:text-teal-600 transition">
-                            <Lock size={16} />
-                        </button>
+            contentArea.innerHTML = `
+                <div class="space-y-8">
+                    <div class="bg-white/60 backdrop-blur-sm p-4 sm:p-6 rounded-2xl shadow-sm border border-stone-200/80">
+                       <p class="text-stone-700 text-center">Die Höhepunkte Ihrer Reise sind die weltberühmten Lichterfeste. Loy Krathong ehrt die Göttin des Wassers, während Yi Peng den Himmel mit Tausenden von Laternen erleuchtet, die für Glück und das Loslassen von Sorgen stehen. Hier finden Sie eine Übersicht der wichtigsten Ereignisse und eine visuelle Darstellung der Reiseintensität.</p>
                     </div>
-                </header>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="bg-white/60 backdrop-blur-sm p-6 rounded-2xl shadow-sm border border-stone-200/80">
+                            <h3 class="text-2xl font-bold text-teal-800 mb-4">🌸 Loy Krathong</h3>
+                            <p class="text-stone-500 mb-1 font-semibold">Dienstag, 05. November</p>
+                            <p class="text-stone-700">Der Abend, an dem Flüsse und Kanäle mit Tausenden von leuchtenden Flößen (Krathongs) erhellt werden. Ein Fest der Reinigung und Dankbarkeit gegenüber der Wassergöttin. Die Atmosphäre ist magisch, voller Hoffnung und Schönheit.</p>
+                        </div>
+                        <div class="bg-white/60 backdrop-blur-sm p-6 rounded-2xl shadow-sm border border-stone-200/80">
+                            <h3 class="text-2xl font-bold text-teal-800 mb-4">🏮 Yi Peng</h3>
+                            <p class="text-stone-500 mb-1 font-semibold">Mittwoch, 06. November</p>
+                            <p class="text-stone-700">Der Himmel über Chiang Mai verwandelt sich in ein Meer aus schwebenden Lichtern. Das gemeinsame Steigenlassen der Himmelslaternen (Khom Loi) symbolisiert das Loslassen von Sorgen und den Beginn von etwas Neuem. Ein zutiefst bewegender Anblick.</p>
+                        </div>
+                    </div>
+                     <div class="bg-white/60 backdrop-blur-sm p-4 sm:p-6 rounded-2xl shadow-sm border border-stone-200/80">
+                        <h3 class="text-2xl font-bold text-teal-800 mb-4 text-center">Aktivitätsintensität der Reise</h3>
+                        <div class="chart-container">
+                            <canvas id="activityChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            `;
 
-                <nav className="flex flex-wrap justify-center gap-2 mb-10 bg-stone-200/50 p-2 rounded-full max-w-4xl mx-auto">
-                    <button onClick={() => setActiveTab('reiseplan')} className={`nav-button ${activeTab === 'reiseplan' ? 'active' : ''}`}>Reiseplan</button>
-                    <button onClick={() => setActiveTab('highlights')} className={`nav-button ${activeTab === 'highlights' ? 'active' : ''}`}>Highlights</button>
-                    <button onClick={() => setActiveTab('todos')} className={`nav-button ${activeTab === 'todos' ? 'active' : ''}`}>To-Dos</button>
-                    <button onClick={() => setActiveTab('packliste')} className={`nav-button ${activeTab === 'packliste' ? 'active' : ''}`}>Packliste</button>
-                    <button onClick={() => setActiveTab('kosten')} className={`nav-button ${activeTab === 'kosten' ? 'active' : ''}`}>Kosten</button>
-                    <button onClick={() => setActiveTab('karte')} className={`nav-button ${activeTab === 'karte' ? 'active' : ''}`}>Karte</button>
-                    {isAuthenticated && <button onClick={() => setActiveTab('vorschlaege')} className={`nav-button ${activeTab === 'vorschlaege' ? 'active' : ''}`}>Vorschläge</button>}
-                </nav>
+            const ctx = document.getElementById('activityChart').getContext('2d');
+            const chartData = {
+                labels: itineraryData.map(d => `${d.day.split(' ')[1]}. ${d.date.split(' ')[0]}.`),
+                datasets: [{
+                    label: 'Intensität',
+                    data: [7, 8, 8, 7, 9, 7, 8, 8, 10, 10, 9, 9, 7, 8, 10, 5, 6, 7, 8, 7, 6, 7, 7, 7, 8, 9, 6, 6, 6, 3], // Adjusted intensity for new travel days
+                    backgroundColor: 'rgba(13, 148, 136, 0.6)',
+                    borderColor: 'rgba(15, 118, 110, 1)',
+                    borderWidth: 2,
+                    borderRadius: 8,
+                    hoverBackgroundColor: 'rgba(13, 148, 136, 0.8)'
+                }]
+            };
 
-                <main>
-                    {activeTab === 'reiseplan' && (
-                        <div className="space-y-4">
-                            {itinerary.map(day => {
-                                const newPhotoRef = React.createRef();
-                                return (
-                                <div key={day.id} className="day-card bg-white rounded-xl shadow-md overflow-hidden transition-all duration-500 group">
-                                    <div className="day-card-header p-5 flex justify-between items-center cursor-pointer" onClick={() => setOpenDayId(prev => prev === day.id ? null : day.id)}>
-                                        <div className="flex items-center space-x-4">
-                                            <span className="text-2xl">{day.icon}</span>
-                                            <div>
-                                                <p className="font-bold text-teal-800">{day.day}: {day.title}</p>
-                                                <p className="text-sm text-stone-500">{day.date}</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            {isAuthenticated && <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                                                <button onClick={(e) => { e.stopPropagation(); setEditingItem({type: 'day', ...day})}} className="p-2 rounded-full hover:bg-slate-200"><Edit size={16}/></button>
-                                                <button onClick={(e) => { e.stopPropagation(); handleDelete('itinerary', day.id)}} className="p-2 rounded-full hover:bg-red-100 text-slate-500 hover:text-red-600"><Trash2 size={16}/></button>
-                                            </div>}
-                                            <ChevronDown className={`transform transition-transform ${openDayId === day.id ? 'rotate-180' : ''}`} />
-                                        </div>
-                                    </div>
-                                    {openDayId === day.id && (
-                                        <div className="p-5 border-t border-stone-200">
-                                            <h4 className="font-semibold mb-2">Aktivitäten</h4>
-                                            <ul className="space-y-3">
-                                                {day.activities.map((activity, index) => (
-                                                    <li key={index} className="flex items-start gap-3"><Clock size={16} className="mt-1 text-teal-600 shrink-0"/><p className="text-stone-600"><strong className="text-slate-700">{activity.time}:</strong> <BoldText text={activity.desc} /></p></li>
-                                                ))}
-                                            </ul>
-                                            <div className="mt-4 pt-4 border-t">
-                                                 <button onClick={()=> generateFunFact(day)} disabled={isFunFactLoading && activeFunFact.dayId === day.id} className="inline-flex items-center gap-2 bg-emerald-500 text-white font-semibold px-4 py-2 rounded-full hover:bg-emerald-600 transition-colors disabled:bg-slate-400 text-sm">
-                                                    {isFunFactLoading && activeFunFact.dayId === day.id ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                                                    Interessante Info
-                                                </button>
-                                                {activeFunFact.dayId === day.id && activeFunFact.fact && <div className="mt-3 p-3 bg-emerald-50 border-l-4 border-emerald-400 rounded-r-lg text-emerald-800 text-sm">{activeFunFact.fact}</div>}
-                                            </div>
-                                            {isAuthenticated && <div className="mt-4 pt-4 border-t">
-                                                 <h4 className="font-semibold mb-2">Foto-Galerie</h4>
-                                                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-2">
-                                                     {day.photos && day.photos.map((photo, index) => (
-                                                         <div key={index} className="relative group/photo">
-                                                             <img src={photo} alt={`Foto ${index+1}`} className="w-full h-24 object-cover rounded-md bg-slate-200" onError={(e) => e.target.src='https://placehold.co/300x200/e2e8f0/94a3b8?text=Bild-Fehler'}/>
-                                                             <button onClick={() => handleDeletePhoto(day.id, index)} className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-0.5 opacity-0 group-hover/photo:opacity-100"><X size={12}/></button>
-                                                         </div>
-                                                     ))}
-                                                 </div>
-                                                 <div className="flex gap-2">
-                                                     <input ref={newPhotoRef} type="text" placeholder="Bild-URL einfügen..." className="w-full p-2 border rounded-lg"/>
-                                                     <button onClick={() => { handleAddPhoto(day.id, newPhotoRef.current.value); newPhotoRef.current.value = ''; }} className="bg-teal-100 text-teal-800 px-3 rounded-lg font-semibold text-sm">Add</button>
-                                                 </div>
-                                            </div>}
-                                        </div>
-                                    )}
-                                </div>
-                            )})}
-                        </div>
-                    )}
-                    {activeTab === 'highlights' && (
-                        <div className="space-y-8">
-                            <div className="p-6 bg-gradient-to-br from-purple-50 via-white to-orange-50 rounded-2xl shadow-lg text-center">
-                                <h2 className="text-3xl font-bold text-teal-800 mb-2">Die Highlights der Reise</h2>
-                                <p className="text-stone-600 max-w-2xl mx-auto mb-6">Von magischen Festivals bis zu unvergesslichen Naturerlebnissen – das sind die Höhepunkte, auf die Sie sich freuen können.</p>
-                                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {highlights.map(highlight => <HighlightCard key={highlight.id} highlight={highlight} />)}
-                                </div>
-                            </div>
-                            <div className="p-6 bg-white rounded-2xl shadow-lg">
-                                <h3 className="text-2xl font-bold text-teal-800 mb-4 text-center">Aktivitätsindex der Reise</h3>
-                                <div className="h-[250px]"><Bar data={{ labels: itinerary.map(d => `T${d.dayNum}`), datasets: [{ label: 'Intensität', data: [7,8,8,9,9,7,8,8,10,10,9,9,7,8,10,3,5,7,8,7,6,7,7,7,8,8,7,5,6,5], backgroundColor: 'rgba(13, 148, 136, 0.6)' }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { max: 10 } } }} /></div>
-                            </div>
-                        </div>
-                    )}
-                    {activeTab === 'todos' && <CheckList title="Planungs-To-Dos" items={todos} onAdd={handleAddItem} onToggle={handleToggleCheck} onDelete={handleDelete} itemKey="todo" placeholder="Beschreibung..." icon={<ListChecks size={24}/>}/>}
-                    {activeTab === 'packliste' && <CheckList title="Packliste" items={packingList} onAdd={handleAddItem} onToggle={handleToggleCheck} onDelete={handleDelete} itemKey="packing" placeholder="Neuer Gegenstand..." icon={<Briefcase size={24}/>}/>}
-                    {activeTab === 'kosten' && (
-                        <div className="p-6 bg-white rounded-2xl shadow-lg">
-                             <h2 className="text-2xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Wallet/>Kosten-Tracker</h2>
-                             <div className="grid md:grid-cols-2 gap-8 items-center">
-                                <div className="h-[250px]"><Doughnut data={{labels: Object.keys(costs.reduce((acc, c) => ({...acc, [c.category]: (acc[c.category]||0)+c.amount}), {})), datasets: [{ data: Object.values(costs.reduce((acc, c) => ({...acc, [c.category]: (acc[c.category]||0)+c.amount}), {})), backgroundColor: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#64748b']}]}} options={{responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'right'}}}}/></div>
-                                <div><p className="text-4xl font-bold text-teal-600">€ {costs.reduce((sum, c) => sum + c.amount, 0).toFixed(2)}</p><p className="text-slate-500">Gesamtkosten</p></div>
-                             </div>
-                             <div className="my-6 border-t pt-6">
-                                 <h3 className="text-lg font-semibold mb-2">Neue Ausgabe</h3>
-                                 <div className="grid sm:grid-cols-3 gap-2">
-                                     <input type="text" placeholder="Beschreibung" value={newCost.description} onChange={e => setNewCost({...newCost, description: e.target.value})} className="p-2 border rounded-lg"/>
-                                     <select value={newCost.category} onChange={e => setNewCost({...newCost, category: e.target.value})} className="p-2 border rounded-lg bg-white"><option>Flug</option><option>Hotel</option><option>Aktivität</option><option>Essen</option><option>Transport</option><option>Sonstiges</option></select>
-                                     <input type="number" placeholder="Betrag (€)" value={newCost.amount} onChange={e => setNewCost({...newCost, amount: e.target.value})} className="p-2 border rounded-lg"/>
-                                 </div>
-                                 <button onClick={handleAddCost} disabled={!isAuthenticated} className="mt-2 w-full bg-teal-600 text-white font-semibold py-2 rounded-lg disabled:bg-slate-400 disabled:cursor-not-allowed">Hinzufügen</button>
-                             </div>
-                              <ul className="space-y-2 max-h-60 overflow-y-auto">
-                                {costs.map(cost => (
-                                    <li key={cost.id} className="flex justify-between items-center p-2 bg-slate-50 rounded-lg group">
-                                        <span>{cost.description} <span className="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">{cost.category}</span></span>
-                                        <div className="flex items-center gap-4"><span className="font-semibold">€ {cost.amount.toFixed(2)}</span>{isAuthenticated &&<button onClick={() => handleDelete('costs', cost.id)} className="opacity-0 group-hover:opacity-100 text-red-500 p-1"><Trash2 size={16}/></button>}</div>
-                                    </li>
-                                ))}
-                             </ul>
-                        </div>
-                    )}
-                    {activeTab === 'karte' && <MapView locations={[
-                        {name: 'Bangkok (Start)', coords: [13.7563, 100.5018], day: 1, date: '28. Okt', imageUrl: 'https://images.pexels.com/photos/236201/pexels-photo-236201.jpeg?auto=compress&cs=tinysrgb&w=400' },
-                        {name: 'Chiang Rai', coords: [19.9101, 99.8325], day: 4, date: '31. Okt', imageUrl: 'https://images.pexels.com/photos/10594383/pexels-photo-10594383.jpeg?auto=compress&cs=tinysrgb&w=400' },
-                        {name: 'Chiang Mai', coords: [18.7883, 98.9853], day: 5, date: '01. Nov', imageUrl: 'https://images.pexels.com/photos/1440403/pexels-photo-1440403.jpeg?auto=compress&cs=tinysrgb&w=400' },
-                        {name: 'Phuket', coords: [7.8804, 98.3923], day: 12, date: '08. Nov', imageUrl: 'https://images.pexels.com/photos/2349078/pexels-photo-2349078.jpeg?auto=compress&cs=tinysrgb&w=400' },
-                        {name: 'Koh Phi Phi', coords: [7.7403, 98.7784], day: 18, date: '14. Nov', imageUrl: 'https://images.pexels.com/photos/1657893/pexels-photo-1657893.jpeg?auto=compress&cs=tinysrgb&w=400' },
-                        {name: 'Koh Kradan', coords: [7.3069, 99.2559], day: 20, date: '16. Nov', imageUrl: 'https://live.staticflickr.com/7123/7002016553_4798e28157_b.jpg' },
-                        {name: 'Koh Lanta', coords: [7.6295, 99.0384], day: 22, date: '18. Nov', imageUrl: 'https://images.pexels.com/photos/10188484/pexels-photo-10188484.jpeg?auto=compress&cs=tinysrgb&w=400' },
-                        {name: 'Krabi (Ao Nang)', coords: [8.0333, 98.8225], day: 24, date: '20. Nov', imageUrl: 'https://images.pexels.com/photos/2798099/pexels-photo-2798099.jpeg?auto=compress&cs=tinysrgb&w=400' },
-                        {name: 'Bangkok (Ende)', coords: [13.736717, 100.523186], day: 27, date: '23. Nov', imageUrl: 'https://images.pexels.com/photos/3794358/pexels-photo-3794358.jpeg?auto=compress&cs=tinysrgb&w=400' },
-                    ]} />}
-                     {activeTab === 'vorschlaege' && (
-                        <div className="p-6 bg-white rounded-2xl shadow-lg text-center">
-                            <MessageSquareQuote size={48} className="mx-auto text-slate-300 mb-4"/>
-                            <h2 className="text-2xl font-bold text-slate-800 mb-2">Änderungsvorschläge</h2>
-                            <p className="text-slate-500">Hier werden in Zukunft Änderungsvorschläge von anderen Nutzern angezeigt, die Sie prüfen und übernehmen können.</p>
-                            {suggestions.length === 0 && <p className="mt-4 text-slate-400 italic">Derzeit gibt es keine neuen Vorschläge.</p>}
-                        </div>
-                    )}
-                </main>
-            </div>
-        </div>
-    );
-}
+            activityChart = new Chart(ctx, {
+                type: 'bar',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: (context) => itineraryData[context[0].dataIndex].title,
+                                label: (context) => ` Intensität: ${context.raw}/10`
+                            },
+                            backgroundColor: '#3f3c3a',
+                            titleFont: { size: 14, weight: 'bold' },
+                            bodyFont: { size: 12 },
+                            padding: 10,
+                            cornerRadius: 8
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 10,
+                            grid: { color: 'rgba(0,0,0,0.05)' },
+                            ticks: { color: '#57534e' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#57534e' }
+                        }
+                    }
+                }
+            });
+        }
 
+        function renderHinweise() {
+            let html = `
+                <div class="space-y-8">
+                     <div class="bg-white/60 backdrop-blur-sm p-4 sm:p-6 rounded-2xl shadow-sm border border-stone-200/80">
+                       <p class="text-stone-700 text-center">Eine gute Vorbereitung ist der Schlüssel zu einer stressfreien und unvergesslichen Reise, besonders während der geschäftigen Festivalsaison. Beachten Sie diese wichtigen Ratschläge, um Ihre Zeit in Thailand optimal zu nutzen.</p>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            `;
+            tipsData.forEach(tip => {
+                html += `
+                    <div class="bg-white/60 backdrop-blur-sm p-6 rounded-2xl shadow-sm border border-stone-200/80">
+                        <div class="flex items-center mb-3">
+                           <span class="text-3xl mr-3">${tip.icon}</span>
+                           <h3 class="text-xl font-bold text-teal-800">${tip.title}</h3>
+                        </div>
+                        <p class="text-stone-700">${tip.text}</p>
+                    </div>
+                `;
+            });
+            html += '</div></div>';
+            contentArea.innerHTML = html;
+        }
+
+        function updateView(view) {
+            Object.values(navButtons).forEach(btn => btn.classList.remove('active'));
+            navButtons[view].classList.add('active');
+
+            if (view === 'reiseplan') renderItinerary();
+            else if (view === 'festival') renderFestivalGuide();
+            else if (view === 'hinweise') renderHinweise();
+        }
+
+        navButtons.reiseplan.addEventListener('click', () => updateView('reiseplan'));
+        navButtons.festival.addEventListener('click', () => updateView('festival'));
+        navButtons.hinweise.addEventListener('click', () => updateView('hinweise'));
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updateView('reiseplan');
+        });
+    </script>
+</body>
+</html>
